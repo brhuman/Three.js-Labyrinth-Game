@@ -108,66 +108,6 @@ class Game {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
 
-        // Post-processing setup
-        this.composer = new EffectComposer(this.renderer);
-        this.composer.addPass(new RenderPass(this.scene, this.camera));
-
-        const HorrorShader = {
-            uniforms: {
-                'tDiffuse': { value: null },
-                'sepiaAmount': { value: 0.1 },
-                'vignetteAmount': { value: 0.2 },
-                'vignetteFalloff': { value: 1.5 },
-                'time': { value: 0.0 }
-            },
-            vertexShader: `
-                varying vec2 vUv;
-                void main() {
-                    vUv = uv;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }
-            `,
-            fragmentShader: `
-                uniform sampler2D tDiffuse;
-                uniform float sepiaAmount;
-                uniform float vignetteAmount;
-                uniform float vignetteFalloff;
-                uniform float time;
-                varying vec2 vUv;
-
-                float random(vec2 p) {
-                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-                }
-
-                void main() {
-                    vec4 color = texture2D(tDiffuse, vUv);
-                    
-                    // Sepia (Dirty horror style)
-                    vec3 sepia = vec3(
-                        dot(color.rgb, vec3(0.393, 0.769, 0.189)),
-                        dot(color.rgb, vec3(0.349, 0.686, 0.168)),
-                        dot(color.rgb, vec3(0.272, 0.534, 0.131))
-                    );
-                    color.rgb = mix(color.rgb, sepia, sepiaAmount);
-                    
-                    // Vignette (Darkening edges)
-                    vec2 dist = vUv - 0.5;
-                    float len = length(dist);
-                    float vignette = smoothstep(0.5, 0.5 - vignetteAmount, len * vignetteFalloff);
-                    color.rgb *= vignette;
-                    
-                    // Film Grain
-                    float grain = (random(vUv + time) - 0.5) * 0.06;
-                    color.rgb += grain;
-                    
-                    gl_FragColor = color;
-                }
-            `
-        };
-
-        this.horrorPass = new ShaderPass(HorrorShader);
-        this.composer.addPass(this.horrorPass);
-
         // Ultra-dense forest fog (0.45 density = extreme visibility restriction)
         this.scene.fog = new THREE.FogExp2(0x020502, 0.45);
 
