@@ -119,9 +119,9 @@ class Game {
         const HorrorShader = {
             uniforms: {
                 'tDiffuse': { value: null },
-                'sepiaAmount': { value: 0.25 },
-                'vignetteAmount': { value: 0.4 },
-                'vignetteFalloff': { value: 1.2 },
+                'sepiaAmount': { value: 0.1 },
+                'vignetteAmount': { value: 0.2 },
+                'vignetteFalloff': { value: 1.5 },
                 'time': { value: 0.0 }
             },
             vertexShader: `
@@ -192,7 +192,7 @@ class Game {
         this.scene.add(this.moonLight);
 
         // Player-held torch light (attached to camera) - ultra-dim, long-range steady glow
-        this.playerLight = new THREE.PointLight(0xffaa44, 0.15, 15); // Long range, low intensity orange
+        this.playerLight = new THREE.PointLight(0xffaa44, 0.2, 15); // Long range, low intensity orange
         this.playerLight.position.set(0.3, -0.2, -0.2); // Positioned slightly to the side/front
         this.camera.add(this.playerLight);
         this.scene.add(this.camera);
@@ -1109,7 +1109,7 @@ class Game {
 
         // Player torch (ultra-dim, long-range, steady)
         if (this.playerLight) {
-            this.playerLight.intensity = 0.15;
+            this.playerLight.intensity = 0.2;
             // Removed wiggle for "steady" effect
             this.playerLight.position.set(0.3, -0.2, -0.2);
         }
