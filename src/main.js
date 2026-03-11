@@ -2,12 +2,16 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Maze } from './maze.js';
 import { findPathBFS, getAccessibleArea } from './utils.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 class Game {
     constructor() {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.composer = null;
         this.controls = null;
         this.mazeSize = 25; // Increased for Phase 9
         this.grid = null;
@@ -107,6 +111,66 @@ class Game {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
+
+        // Post-processing setup
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+        const HorrorShader = {
+            uniforms: {
+                'tDiffuse': { value: null },
+                'sepiaAmount': { value: 0.4 },
+                'vignetteAmount': { value: 0.6 },
+                'vignetteFalloff': { value: 1.1 },
+                'time': { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float sepiaAmount;
+                uniform float vignetteAmount;
+                uniform float vignetteFalloff;
+                uniform float time;
+                varying vec2 vUv;
+
+                float random(vec2 p) {
+                    return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+                }
+
+                void main() {
+                    vec4 color = texture2D(tDiffuse, vUv);
+                    
+                    // Sepia (Dirty horror style)
+                    vec3 sepia = vec3(
+                        dot(color.rgb, vec3(0.393, 0.769, 0.189)),
+                        dot(color.rgb, vec3(0.349, 0.686, 0.168)),
+                        dot(color.rgb, vec3(0.272, 0.534, 0.131))
+                    );
+                    color.rgb = mix(color.rgb, sepia, sepiaAmount);
+                    
+                    // Vignette (Darkening edges)
+                    vec2 dist = vUv - 0.5;
+                    float len = length(dist);
+                    float vignette = smoothstep(0.5, 0.5 - vignetteAmount, len * vignetteFalloff);
+                    color.rgb *= vignette;
+                    
+                    // Film Grain
+                    float grain = (random(vUv + time) - 0.5) * 0.06;
+                    color.rgb += grain;
+                    
+                    gl_FragColor = color;
+                }
+            `
+        };
+
+        this.horrorPass = new ShaderPass(HorrorShader);
+        this.composer.addPass(this.horrorPass);
 
         // Ultra-dense forest fog (0.45 density = extreme visibility restriction)
         this.scene.fog = new THREE.FogExp2(0x020502, 0.45);
@@ -946,6 +1010,9 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        if (this.composer) {
+            this.composer.setSize(window.innerWidth, window.innerHeight);
+        }
     }
 
     isUnderObstacle(x, z) {
@@ -1050,6 +1117,11 @@ class Game {
         // Star twinkle — gentle pulse via opacity
         if (this.starMaterial) {
             this.starMaterial.opacity = 0.7 + Math.sin(performance.now() * 0.0008) * 0.15;
+        }
+
+        // Update shader time for grain
+        if (this.horrorPass) {
+            this.horrorPass.uniforms.time.value = performance.now() * 0.001;
         }
 
         const time = performance.now();
@@ -1276,7 +1348,12 @@ class Game {
             this.goal.position.y = Math.sin(performance.now() * 0.005) * 0.1 + 0.2;
         }
 
-        this.renderer.render(this.scene, this.camera);
+        // Render with post-processing if available
+        if (this.composer) {
+            this.composer.render();
+        } else {
+            this.renderer.render(this.scene, this.camera);
+        }
     }
 
     spawnMonster() {
