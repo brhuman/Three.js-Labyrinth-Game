@@ -425,6 +425,7 @@ class Game {
                 object !== this.monster &&      // Never remove the monster
                 object !== this.monsterSound && // Keep monster's heart beating
                 object !== this.monsterLight && // Keep monster's glow
+                object !== this.playerLight &&  // Keep player's hand-held torch
                 !object.isAmbientLight) {
                 toRemove.push(object);
             }
