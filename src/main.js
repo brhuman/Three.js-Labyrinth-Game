@@ -95,6 +95,8 @@ class Game {
         this.isMuted = true;
         this.listener.setMasterVolume(0);
 
+        this.isFullscreenToggling = false;
+
         this.init();
     }
 
@@ -113,8 +115,8 @@ class Game {
         const ambientLight = new THREE.AmbientLight(0x405040, 0.12);
         this.scene.add(ambientLight);
 
-        // Silver-green moon light
-        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.25);
+        // Silver-green moon light (brightened per request)
+        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.4);
         this.moonLight.castShadow = true;
         // Max out shadow map for crispness
         this.moonLight.shadow.mapSize.width = 4096;
@@ -125,8 +127,8 @@ class Game {
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
-        // Player-held torch light (attached to camera)
-        this.playerLight = new THREE.PointLight(0xffaa44, 1.5, 7); // Warm orange
+        // Player-held torch light (attached to camera) - dimmed per request
+        this.playerLight = new THREE.PointLight(0xffaa44, 1.0, 7); // Warm orange
         this.playerLight.position.set(0.3, -0.2, -0.2); // Positioned slightly to the side/front
         this.camera.add(this.playerLight);
         this.scene.add(this.camera);
@@ -311,16 +313,27 @@ class Game {
             const el = document.body;
             const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
             if (!isFs) {
+                this.isFullscreenToggling = true;
                 // If pointer lock is active, exit it first (some browsers can't do both)
                 const req = el.requestFullscreen?.bind(el) || el.webkitRequestFullscreen?.bind(el);
-                if (!req) return;
+                if (!req) {
+                    this.isFullscreenToggling = false;
+                    return;
+                }
                 if (document.pointerLockElement) {
                     document.exitPointerLock();
-                    setTimeout(() => req().catch(e => console.warn('Fullscreen error:', e)), 50);
+                    setTimeout(() => req().catch(e => {
+                        console.warn('Fullscreen error:', e);
+                        this.isFullscreenToggling = false;
+                    }), 50);
                 } else {
-                    req().catch(e => console.warn('Fullscreen error:', e));
+                    req().catch(e => {
+                        console.warn('Fullscreen error:', e);
+                        this.isFullscreenToggling = false;
+                    });
                 }
             } else {
+                this.isFullscreenToggling = true;
                 const exit = document.exitFullscreen?.bind(document) || document.webkitExitFullscreen?.bind(document);
                 if (exit) exit();
             }
@@ -328,10 +341,16 @@ class Game {
         document.addEventListener('fullscreenchange', () => {
             const icon = document.getElementById('fullscreen-icon');
             if (icon) icon.textContent = document.fullscreenElement ? '✕' : '⛶';
+            
+            // Allow menu again after transition
+            setTimeout(() => { this.isFullscreenToggling = false; }, 100);
         });
         document.addEventListener('webkitfullscreenchange', () => {
             const icon = document.getElementById('fullscreen-icon');
             if (icon) icon.textContent = document.webkitFullscreenElement ? '✕' : '⛶';
+            
+            // Allow menu again after transition
+            setTimeout(() => { this.isFullscreenToggling = false; }, 100);
         });
 
         // Set initial icon
@@ -367,8 +386,8 @@ class Game {
         });
 
         this.controls.addEventListener('unlock', () => {
-            // Only show menu if not game over (game over shows its own modal)
-            if (!this.isGameOver) {
+            // Only show menu if not game over and NOT toggling fullscreen
+            if (!this.isGameOver && !this.isFullscreenToggling) {
                 document.getElementById('menu').style.display = 'block';
             }
             document.getElementById('hud').style.display = 'none';
@@ -1022,7 +1041,7 @@ class Game {
 
         // Player torch flicker & subtle movement
         if (this.playerLight) {
-            this.playerLight.intensity = 1.5 + Math.sin(timeNow * 1.2) * 0.1 + Math.random() * 0.25;
+            this.playerLight.intensity = 1.0 + Math.sin(timeNow * 1.2) * 0.1 + Math.random() * 0.25;
             // Handheld wiggle effect
             this.playerLight.position.x = 0.3 + Math.sin(timeNow * 0.5) * 0.04;
             this.playerLight.position.y = -0.2 + Math.cos(timeNow * 0.7) * 0.03;
