@@ -2,16 +2,12 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Maze } from './maze.js';
 import { findPathBFS, getAccessibleArea } from './utils.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 
 class Game {
     constructor() {
         this.scene = new THREE.Scene();
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
-        this.composer = null;
         this.controls = null;
         this.mazeSize = 25; // Increased for Phase 9
         this.grid = null;
@@ -1010,9 +1006,6 @@ class Game {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        if (this.composer) {
-            this.composer.setSize(window.innerWidth, window.innerHeight);
-        }
     }
 
     isUnderObstacle(x, z) {
@@ -1117,11 +1110,6 @@ class Game {
         // Star twinkle — gentle pulse via opacity
         if (this.starMaterial) {
             this.starMaterial.opacity = 0.7 + Math.sin(performance.now() * 0.0008) * 0.15;
-        }
-
-        // Update shader time for grain
-        if (this.horrorPass) {
-            this.horrorPass.uniforms.time.value = performance.now() * 0.001;
         }
 
         const time = performance.now();
@@ -1348,12 +1336,7 @@ class Game {
             this.goal.position.y = Math.sin(performance.now() * 0.005) * 0.1 + 0.2;
         }
 
-        // Render with post-processing if available
-        if (this.composer) {
-            this.composer.render();
-        } else {
-            this.renderer.render(this.scene, this.camera);
-        }
+        this.renderer.render(this.scene, this.camera);
     }
 
     spawnMonster() {
