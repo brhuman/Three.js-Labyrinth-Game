@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Neon Labyrinth | 3D Maze</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div id="ui-overlay">
+      <div id="menu" class="glass-panel">
+        <h1>NEON LABYRINTH</h1>
+        <p>Find your way out of the procedural maze.</p>
+        <button id="start-btn">ENTER THE MAZE</button>
+        <p style="margin-top: 20px; opacity: 0.6; font-size: 0.8rem;">WASD to Move • Mouse to Look</p>
+      </div>
+
+      <div id="game-over" class="glass-panel" style="display: none;">
+        <h1 style="background: linear-gradient(45deg, #ff4c4c, #ff0000); -webkit-background-clip: text; color: transparent;">YOU DIED</h1>
+        <p>The monster caught you.</p>
+        <button id="restart-btn" style="background: #ff0000;">TRY AGAIN</button>
+      </div>
+
+      <div id="hud">
+        <div id="minimap-container" class="glass-panel">
+          <canvas id="minimap"></canvas>
+        </div>
+        <div class="glass-panel-group">
+          <div class="glass-panel">
+            <div class="stats">Level: <span id="level">1</span></div>
+          </div>
+          <div class="glass-panel">
+            <div class="stats">Keys: <span id="keys">0</span></div>
+          </div>
+          <div class="glass-panel">
+            <div class="stats">Time: <span id="timer">00:00</span></div>
+          </div>
+          <div class="glass-panel">
+            <div class="stats">Monster: <span id="monster-timer" style="color: #ff4c4c;">5.0s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="crosshair"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

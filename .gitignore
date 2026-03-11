@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Vite build output
+dist/
+.vite/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Editor / OS files
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Test coverage / cache
+coverage/
+.nyc_output/
+.eslintcache
+
+# Local environment
+.env
+.env.*
+
