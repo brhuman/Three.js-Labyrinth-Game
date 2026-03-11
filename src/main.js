@@ -101,19 +101,20 @@ class Game {
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.setClearColor(0x87ceeb);
+        this.renderer.setClearColor(0x020502); // Match forest fog color
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
 
-        this.scene.fog = new THREE.FogExp2(0x050510, 0.05);
+        // Ultra-dense forest fog (0.45 density = extreme visibility restriction)
+        this.scene.fog = new THREE.FogExp2(0x020502, 0.45);
 
-        // Darkened ambient light (-40% vs previous)
-        const ambientLight = new THREE.AmbientLight(0x5050c0, 0.15);
+        // Forest-green tinted ambient light
+        const ambientLight = new THREE.AmbientLight(0x405040, 0.12);
         this.scene.add(ambientLight);
 
-        // Dimmed moon light (less harsh on walls)
-        this.moonLight = new THREE.DirectionalLight(0xb0b0ff, 0.3);
+        // Silver-green moon light
+        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.25);
         this.moonLight.castShadow = true;
         // Max out shadow map for crispness
         this.moonLight.shadow.mapSize.width = 4096;
@@ -124,6 +125,10 @@ class Game {
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
+        // Player-held torch light (attached to camera)
+        this.playerLight = new THREE.PointLight(0xffaa44, 1.5, 7); // Warm orange
+        this.playerLight.position.set(0.3, -0.2, -0.2); // Positioned slightly to the side/front
+        this.camera.add(this.playerLight);
         this.scene.add(this.camera);
 
         // Clean dark sky background — stars are handled by THREE.Points below
@@ -448,11 +453,15 @@ class Game {
 
         const wallMaterial = new THREE.MeshPhongMaterial({ 
             map: this.textures.brick,
+            color: 0xa0b0a0, // Subtle green-grey tint (mossy/forest look)
             shininess: 5
         });
 
         const floorGeometry = new THREE.PlaneGeometry(this.mazeSize, this.mazeSize);
-        const floorMaterial = new THREE.MeshPhongMaterial({ map: this.textures.floor });
+        const floorMaterial = new THREE.MeshPhongMaterial({ 
+            map: this.textures.floor,
+            color: 0x90a090 // Slightly darker green tint for floor
+        });
         const floor = new THREE.Mesh(floorGeometry, floorMaterial);
         floor.rotation.x = -Math.PI / 2;
         floor.position.set(this.mazeSize / 2 - 0.5, -0.5, this.mazeSize / 2 - 0.5);
@@ -994,6 +1003,31 @@ class Game {
         if (this.cloudSphere) {
             this.cloudSphere.rotation.y += 0.0002; // physical rotation of the cloud dome
         }
+
+        // --- TORCH FLICKER LOGIC ---
+        const timeNow = performance.now() * 0.005;
+        // Flicker environment torches
+        this.torchLights.forEach(t => {
+            if (t.light) {
+                t.light.intensity = t.baseIntensity + Math.sin(timeNow * 0.8 + t.gridX) * 0.1 + Math.random() * 0.2;
+                // Also slightly pulse the flame meshes
+                if (t.flameMeshes) {
+                    t.flameMeshes.forEach((m, i) => {
+                        const s = 1.0 + Math.sin(timeNow * 1.5 + i) * 0.05 + Math.random() * 0.02;
+                        m.scale.set(s, s, s);
+                    });
+                }
+            }
+        });
+
+        // Player torch flicker & subtle movement
+        if (this.playerLight) {
+            this.playerLight.intensity = 1.5 + Math.sin(timeNow * 1.2) * 0.1 + Math.random() * 0.25;
+            // Handheld wiggle effect
+            this.playerLight.position.x = 0.3 + Math.sin(timeNow * 0.5) * 0.04;
+            this.playerLight.position.y = -0.2 + Math.cos(timeNow * 0.7) * 0.03;
+        }
+
         // Star twinkle — gentle pulse via opacity
         if (this.starMaterial) {
             this.starMaterial.opacity = 0.7 + Math.sin(performance.now() * 0.0008) * 0.15;
