@@ -21,6 +21,8 @@ class Game {
         this.moveBackward = false;
         this.moveLeft = false;
         this.moveRight = false;
+        this.rotateLeft = false;
+        this.rotateRight = false;
         this.isCrouching = false;
         this.canJump = true;
         
@@ -60,7 +62,7 @@ class Game {
         this.monster = null;
         this.isGameOver = false;
         this.monsterSpawned = false;
-        this.baseMonsterSpeed = 1.6;
+        this.baseMonsterSpeed = 1.12; // Reduced by 30% (from 1.6)
         this.monsterSpeed = this.baseMonsterSpeed;
         this.monsterTextures = [];
         this.useFogOfWar = true;
@@ -69,7 +71,7 @@ class Game {
         this.powerups = [];
         this.keys = [];
         this.lockedDoors = [];
-        this.basePlayerSpeed = 40.0;
+        this.basePlayerSpeed = 28.0; // Reduced by 30% (from 40.0)
         this.playerSpeed = this.basePlayerSpeed;
         this.crouchKeyPressed = false;
         this.slowPowerupRemaining = 0;
@@ -108,8 +110,8 @@ class Game {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
 
-        // Ultra-dense forest fog (0.45 density = extreme visibility restriction)
-        this.scene.fog = new THREE.FogExp2(0x020502, 0.45);
+        // Enhanced Fog: Linear fog for tighter, smoother transition (0.5m to 9m)
+        this.scene.fog = new THREE.Fog(0x020502, 0.5, 9);
 
         // Forest-green tinted ambient light
         const ambientLight = new THREE.AmbientLight(0x405040, 0.12);
@@ -127,10 +129,20 @@ class Game {
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
-        // Player-held torch light (attached to camera) - ultra-dim, long-range steady glow
-        this.playerLight = new THREE.PointLight(0xffaa44, 0.2, 15); // Long range, low intensity orange
-        this.playerLight.position.set(0.3, -0.2, -0.2); // Positioned slightly to the side/front
-        this.camera.add(this.playerLight);
+        // Flashlight (SpotLight attached to camera)
+        this.flashlight = new THREE.SpotLight(0xffaa44, 2.0, 20, Math.PI / 6, 0.5, 2);
+        this.flashlight.position.set(0.3, -0.2, -0.2);
+        this.flashlight.castShadow = true;
+        this.flashlight.shadow.mapSize.width = 1024;
+        this.flashlight.shadow.mapSize.height = 1024;
+        this.camera.add(this.flashlight);
+
+        // Flashlight target (also attached to camera to stay relative)
+        this.flashlightTarget = new THREE.Object3D();
+        this.flashlightTarget.position.set(0.3, -0.2, -5); // Points forward
+        this.camera.add(this.flashlightTarget);
+        this.flashlight.target = this.flashlightTarget;
+
         this.scene.add(this.camera);
 
         // Clean dark sky background — stars are handled by THREE.Points below
@@ -898,11 +910,11 @@ class Game {
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW': this.moveForward = true; break;
-            case 'ArrowLeft':
+            case 'ArrowLeft': this.rotateLeft = true; break;
             case 'KeyA': this.moveLeft = true; break;
             case 'ArrowDown':
             case 'KeyS': this.moveBackward = true; break;
-            case 'ArrowRight':
+            case 'ArrowRight': this.rotateRight = true; break;
             case 'KeyD': this.moveRight = true; break;
             case 'Space': 
                 if (this.canJump) {
@@ -928,11 +940,11 @@ class Game {
         switch (event.code) {
             case 'ArrowUp':
             case 'KeyW': this.moveForward = false; break;
-            case 'ArrowLeft':
+            case 'ArrowLeft': this.rotateLeft = false; break;
             case 'KeyA': this.moveLeft = false; break;
             case 'ArrowDown':
             case 'KeyS': this.moveBackward = false; break;
-            case 'ArrowRight':
+            case 'ArrowRight': this.rotateRight = false; break;
             case 'KeyD': this.moveRight = false; break;
             case 'ControlLeft':
             case 'ControlRight':
@@ -1040,11 +1052,9 @@ class Game {
             }
         });
 
-        // Player torch (ultra-dim, long-range, steady)
-        if (this.playerLight) {
-            this.playerLight.intensity = 0.2;
-            // Removed wiggle for "steady" effect
-            this.playerLight.position.set(0.3, -0.2, -0.2);
+        // No wiggle for steady flashlight
+        if (this.flashlight) {
+            this.flashlight.intensity = 2.0; 
         }
 
         // Star twinkle — gentle pulse via opacity
@@ -1094,6 +1104,14 @@ class Game {
 
             if (this.monsterSpawned) {
                 this.updateMonster(delta);
+            }
+
+            // Keyboard rotation (Arrow keys)
+            if (this.rotateLeft) {
+                this.camera.rotation.y += 2.0 * delta;
+            }
+            if (this.rotateRight) {
+                this.camera.rotation.y -= 2.0 * delta;
             }
 
             this.velocity.x -= this.velocity.x * 10.0 * delta;
