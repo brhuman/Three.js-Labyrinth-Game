@@ -14,7 +14,6 @@ class Game {
         this.walls = [];
         this.goal = null;
         this.level = 1;
-        this.playerKeys = 0; // Phase 9 keys
         this.startTime = null;
         
         this.moveForward = false;
@@ -66,16 +65,24 @@ class Game {
         this.monsterSpeed = this.baseMonsterSpeed;
         this.monsterTextures = [];
         this.useFogOfWar = true;
+        this.monsterBaseVolume = 1.8;
+        this.monsterVolume = 0;
+        this.monsterVolumeTarget = 0;
         
         // Powerups & Progression
         this.powerups = [];
-        this.keys = [];
-        this.lockedDoors = [];
+        this.batteries = []; // Battery collection
+        this.batteryLevel = 100; // Flashlight battery
         this.basePlayerSpeed = 28.0; // Reduced by 30% (from 40.0)
         this.playerSpeed = this.basePlayerSpeed;
         this.crouchKeyPressed = false;
         this.slowPowerupRemaining = 0;
         this.speedPowerupRemaining = 0;
+        
+        // Jump physics refinement
+        this.gravityValue = 12.0;
+        this.jumpForce = 3.2;
+
         
         // FPS Counter
         this.fpsFrameCount = 0;
@@ -94,12 +101,16 @@ class Game {
         this.camera.add(this.listener);
         this.monsterSound = null;
         this.screamBuffers = [];
-        this.isMuted = true;
-        this.listener.setMasterVolume(0);
+        this.flashlightOnSound = null;
+        this.flashlightOffSound = null;
+        this.isMuted = false;
+        this.listener.setMasterVolume(1);
 
         this.isFullscreenToggling = false;
+        this.gameStarted = false;
 
         this.init();
+
     }
 
     init() {
@@ -110,15 +121,19 @@ class Game {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(this.renderer.domElement);
 
-        // Enhanced Fog: Linear fog for tighter, smoother transition (0.5m to 9m)
-        this.scene.fog = new THREE.Fog(0x020502, 0.5, 9);
+        // Enhanced Fog: чуть менее плотный, чтобы сцена казалась светлее
+        this.scene.fog = new THREE.Fog(0x040804, 0.5, 11);
 
-        // Forest-green tinted ambient light
-        const ambientLight = new THREE.AmbientLight(0x405040, 0.12);
+        // Forest-green ambient light — ещё немного темнее, но тени всё ещё читаются
+        const ambientLight = new THREE.AmbientLight(0x606860, 0.26);
         this.scene.add(ambientLight);
 
-        // Silver-green moon light (brightened further per request)
-        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.7);
+        // Очень мягкий "лунный" заполняющий свет — чуть ослабляем для более мрачного настроения
+        const hemiLight = new THREE.HemisphereLight(0xa0c0ff, 0x101308, 0.10);
+        this.scene.add(hemiLight);
+
+        // Silver-green moon light — усиливаем свет и тени от луны примерно на 20%
+        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.84);
         this.moonLight.castShadow = true;
         // Max out shadow map for crispness
         this.moonLight.shadow.mapSize.width = 4096;
@@ -129,21 +144,30 @@ class Game {
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
-        // Flashlight (SpotLight attached to camera)
-        this.flashlight = new THREE.SpotLight(0xffaa44, 2.0, 20, Math.PI / 6, 0.5, 2);
+        // Cool Flashlight (SpotLight attached to camera)
+        this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.5, 20, Math.PI / 6, 0.5, 2);
         this.flashlight.position.set(0.3, -0.2, -0.2);
         this.flashlight.castShadow = true;
         this.flashlight.shadow.mapSize.width = 1024;
         this.flashlight.shadow.mapSize.height = 1024;
         this.camera.add(this.flashlight);
 
-        // Flashlight target (also attached to camera to stay relative)
+        // Flashlight Halo (Secondary soft light for scattering effect)
+        this.flashlightHalo = new THREE.SpotLight(0xc0d0ff, 0.8, 10, Math.PI / 3, 0.8, 1);
+        this.flashlightHalo.position.set(0.3, -0.2, -0.2);
+        this.camera.add(this.flashlightHalo);
+
+        // Flashlight targets (shared)
         this.flashlightTarget = new THREE.Object3D();
-        this.flashlightTarget.position.set(0.3, -0.2, -5); // Points forward
+        this.flashlightTarget.position.set(0.3, -0.2, -5);
         this.camera.add(this.flashlightTarget);
         this.flashlight.target = this.flashlightTarget;
+        this.flashlightHalo.target = this.flashlightTarget;
 
         this.scene.add(this.camera);
+
+        // Simple synthesized flashlight click sounds (on/off)
+        this.initFlashlightSounds();
 
         // Clean dark sky background — stars are handled by THREE.Points below
         const skyGeo = new THREE.SphereGeometry(500, 32, 32);
@@ -285,7 +309,12 @@ class Game {
         const restartBtn = document.getElementById('restart-btn');
 
         const startGame = () => {
+            if (!this.gameStarted) {
+                this.gameStarted = true;
+                startBtn.innerText = "CONTINUE";
+            }
             const fowToggle = document.getElementById('fow-toggle');
+
             this.useFogOfWar = fowToggle ? fowToggle.checked : true;
             
             document.getElementById('game-over').style.display = 'none';
@@ -320,8 +349,10 @@ class Game {
             document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
         };
         const toggleMute = this.toggleMute;
+        document.getElementById('mute-btn').addEventListener('click', toggleMute);
 
         this.toggleFullscreen = () => {
+
             const el = document.body;
             const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
             if (!isFs) {
@@ -365,8 +396,8 @@ class Game {
             setTimeout(() => { this.isFullscreenToggling = false; }, 100);
         });
 
-        // Set initial icon
-        document.getElementById('mute-icon').textContent = '🔇';
+        // Set initial icon (sound ON by default)
+        document.getElementById('mute-icon').textContent = '🔊';
 
         const muteBtn = document.getElementById('mute-btn');
         if (muteBtn) muteBtn.addEventListener('click', (e) => {
@@ -523,60 +554,38 @@ class Game {
         const endPathX = this.mazeSize - 1, endPathY = this.mazeSize - 2;
         const mainPath = findPathBFS(this.grid, this.mazeSize, this.mazeSize, endPathX, endPathY, startPathX, startPathY); // Reverse to get from exit to start
         
-        const numLocks = Math.min(this.level, 3); // Max 3 locks
+
 
         // Instantiate maze objects (walls only — obstacles removed)
         // Walls are already instantiated above so we skip the duplicate loop.
         
-        // Pick locations for doors on the main path
-        // To ensure we have space between them, pick indices spaced out
-        const doorPositions = [];
-        if (mainPath.length > numLocks * 4) {
-             const step = Math.floor((mainPath.length - 4) / numLocks);
-             for (let i = 0; i < numLocks; i++) {
-                 // Start index + offset. Index 0 is exit.
-                 const pathIndex = 2 + (i * step);
-                 doorPositions.push(mainPath[pathIndex]);
-             }
-        }
-        const doorSet = new Set(doorPositions.map(p => `${p[0]},${p[1]}`));
+
+
         
 
       
         // Replace empty spaces with doors and spawn a key BEFORE the door 
         // We evaluate accessible spaces using BFS from start that STOPS at all door positions
-        let accessibleFromStart = getAccessibleArea(this.grid, this.mazeSize, this.mazeSize, startPathX, startPathY, doorSet);
+
         
-        for (let i = 0; i < doorPositions.length; i++) {
-             const pos = doorPositions[i];
-             
-             // The key for this door MUST be in the currently accessible area
-             if (accessibleFromStart.length > 0) {
-                 const keyIndex = Math.floor(Math.random() * accessibleFromStart.length);
-                 const keyPos = accessibleFromStart[keyIndex];
-                 
-                 // Spawn Key
-                 this.spawnKey(keyPos[0], keyPos[1]);
-                 
-                 // Remove from emptySpaces so we don't spawn powerups on it
-                 const eIdx = emptySpaces.findIndex(e => e.x === keyPos[0] && e.y === keyPos[1]);
-                 if (eIdx !== -1) emptySpaces.splice(eIdx, 1);
-             }
-             
-             // Now spawn the door itself
-             this.spawnLockedDoor(pos[0], pos[1]);
-             
-             // For the next door (if any), the accessible area now EXTENDS past this current door,
-             // but stops at the REMAINING doors.
-             doorSet.delete(`${pos[0]},${pos[1]}`);
-             accessibleFromStart = getAccessibleArea(this.grid, this.mazeSize, this.mazeSize, startPathX, startPathY, doorSet);
-        }
+        // --- KEY/DOOR SPAWN LOGIC REMOVED ---
+
+
+
+
+
 
         // Shuffle remaining empty spaces and spawn exactly one of each powerup
         emptySpaces.sort(() => Math.random() - 0.5);
         if (emptySpaces.length >= 2) {
             this.spawnPowerup(emptySpaces[0].x, emptySpaces[0].y, 'speed');
             this.spawnPowerup(emptySpaces[1].x, emptySpaces[1].y, 'slow');
+        }
+
+        // Spawn 4-8 batteries per level
+        const numBatteries = 4 + Math.floor(Math.random() * 5);
+        for (let i = 2; i < 2 + numBatteries && i < emptySpaces.length; i++) {
+            this.spawnBattery(emptySpaces[i].x, emptySpaces[i].y);
         }
 
         // Spawn crouch beams in ~5% of remaining empty spaces
@@ -784,92 +793,43 @@ class Game {
             map: tex,
             color: 0xffffff,
             emissive: color,
-            emissiveIntensity: 0.2
+            emissiveIntensity: 0.8
         });
         
         const mesh = new THREE.Mesh(geo, mat);
         mesh.rotation.x = Math.PI / 2; // Stand the coin up
         mesh.rotation.y = Math.PI / 2;
         mesh.position.set(x, 0.5, z);
-        
-        const light = new THREE.PointLight(color, 1, 3);
-        mesh.add(light);
-        
+
         mesh.userData = { type: type, isCoin: true };
         
-        this.scene.add(mesh);
         this.powerups.push(mesh);
     }
 
-    spawnKey(x, z) {
-        // Create an actual key shape using a Group
-        const keyGroup = new THREE.Group();
-        const mat = new THREE.MeshPhongMaterial({ 
-            color: 0xffd700, // Gold
-            emissive: 0xffd700,
-            emissiveIntensity: 0.5
-        });
+    spawnBattery(x, z) {
+        const group = new THREE.Group();
+        // Battery body
+        const bodyGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.25, 8);
+        const bodyMat = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.6 });
+        const body = new THREE.Mesh(bodyGeo, bodyMat);
+        group.add(body);
 
-        // Bow (Head of the key, torus)
-        const bowGeo = new THREE.TorusGeometry(0.1, 0.03, 8, 16);
-        const bowMesh = new THREE.Mesh(bowGeo, mat);
-        bowMesh.position.set(0, 0.25, 0);
-        keyGroup.add(bowMesh);
+        // Battery cap
+        const capGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.05, 8);
+        const capMat = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+        const cap = new THREE.Mesh(capGeo, capMat);
+        cap.position.y = 0.15;
+        group.add(cap);
 
-        // Shaft (Cylinder)
-        const shaftGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8);
-        const shaftMesh = new THREE.Mesh(shaftGeo, mat);
-        shaftMesh.position.set(0, 0.05, 0);
-        keyGroup.add(shaftMesh);
+        group.position.set(x, 0.4, z);
 
-        // Bits (Boxes)
-        const bitGeo1 = new THREE.BoxGeometry(0.1, 0.04, 0.03);
-        const bitMesh1 = new THREE.Mesh(bitGeo1, mat);
-        bitMesh1.position.set(0.05, -0.05, 0);
-        keyGroup.add(bitMesh1);
 
-        const bitGeo2 = new THREE.BoxGeometry(0.08, 0.04, 0.03);
-        const bitMesh2 = new THREE.Mesh(bitGeo2, mat);
-        bitMesh2.position.set(0.04, -0.12, 0);
-        keyGroup.add(bitMesh2);
-        
-        keyGroup.position.set(x, 0.5, z);
-        
-        // Reduced distance 3→1.5 to prevent key glow bleeding through walls
-        const light = new THREE.PointLight(0xffd700, 1, 1.5);
-        keyGroup.add(light);
-        
-        keyGroup.userData = { isKey: true };
-        this.scene.add(keyGroup);
-        this.keys.push(keyGroup);
+        this.scene.add(group);
+        this.batteries.push(group);
     }
 
-    spawnLockedDoor(x, z) {
-        // Lowered locked door from 1.4 to 1.2
-        const geo = new THREE.BoxGeometry(1, 1.2, 1);
-        const mat = new THREE.MeshPhongMaterial({ 
-            color: 0x550000, // Dark red/locked
-            transparent: true,
-            opacity: 0.9
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.position.set(x, 0.6, z); // Center it in the tile
-        mesh.userData = { isLockedDoor: true, gridX: x, gridY: z };
-        
-        // Add a lock icon/cube to the door
-        const lockGeo = new THREE.BoxGeometry(0.2, 0.3, 0.2);
-        const lockMat = new THREE.MeshPhongMaterial({ color: 0xffd700 });
-        const lockMesh = new THREE.Mesh(lockGeo, lockMat);
-        lockMesh.position.set(0, 0, 0);
-        mesh.add(lockMesh);
+    // --- SPAWN METHODS REMOVED ---
 
-        this.scene.add(mesh);
-        this.lockedDoors.push(mesh);
-        
-        // Mark it on the grid so collision works!
-        // We use '2' for locked door so it acts like a wall but we can identify it later
-        this.grid[z][x] = 2;
-    }
 
     spawnCrouchBeam(x, z) {
         // We clone the texture to adjust its UV mapping specifically for the beam
@@ -918,22 +878,49 @@ class Game {
             case 'KeyD': this.moveRight = true; break;
             case 'Space': 
                 if (this.canJump) {
-                    this.velocity.y += 6; // Smoother, lower initial velocity
+                    this.velocity.y = this.jumpForce;
                     this.canJump = false;
                 }
                 break;
+
             case 'ControlLeft':
             case 'ControlRight':
             case 'KeyC':
                 this.crouchKeyPressed = true;
                 break;
             case 'KeyM':
-                if (this.toggleMute) this.toggleMute();
+                this.toggleMute();
                 break;
             case 'KeyF':
+                if (this.flashlight) {
+                    const willTurnOn = !this.flashlight.visible;
+                    this.flashlight.visible = willTurnOn;
+                    if (this.flashlightHalo) this.flashlightHalo.visible = willTurnOn;
+
+                    if (!this.isMuted) {
+                        if (willTurnOn && this.flashlightOnSound && this.flashlightOnSound.isPlaying) {
+                            this.flashlightOnSound.stop();
+                        }
+                        if (!willTurnOn && this.flashlightOffSound && this.flashlightOffSound.isPlaying) {
+                            this.flashlightOffSound.stop();
+                        }
+
+                        if (willTurnOn && this.flashlightOnSound) {
+                            this.flashlightOnSound.play();
+                        } else if (!willTurnOn && this.flashlightOffSound) {
+                            this.flashlightOffSound.play();
+                        }
+                    }
+                }
+                break;
+            case 'KeyL':
                 if (this.toggleFullscreen) this.toggleFullscreen();
                 break;
+            case 'Escape':
+                this.toggleMenu();
+                break;
         }
+
     }
 
     onKeyUp(event) {
@@ -1026,6 +1013,9 @@ class Game {
 
     animate() {
         requestAnimationFrame(() => this.animate());
+        const time = performance.now();
+        const delta = Math.min((time - this.prevTime) / 1000, 0.1);
+        this.prevTime = time;
 
         if (this.textures.clouds) {
             // Speed up clouds slightly to make the dynamic sky more noticeable
@@ -1037,7 +1027,8 @@ class Game {
         }
 
         // --- TORCH FLICKER LOGIC ---
-        const timeNow = performance.now() * 0.005;
+        const timeNow = time * 0.005;
+
         // Flicker environment torches
         this.torchLights.forEach(t => {
             if (t.light) {
@@ -1054,15 +1045,58 @@ class Game {
 
         // No wiggle for steady flashlight
         if (this.flashlight) {
-            this.flashlight.intensity = 2.0; 
+            this.flashlight.intensity = 2.5; 
+        }
+        if (this.flashlightHalo) {
+            this.flashlightHalo.intensity = 0.8;
+        }
+
+        // Smooth monster ambient volume fade (for spawn / stop)
+        if (this.monsterSound) {
+            const fadeSpeed = 1.5; // higher = faster fade (per second)
+            const diff = this.monsterVolumeTarget - this.monsterVolume;
+            if (Math.abs(diff) > 0.001) {
+                this.monsterVolume += diff * Math.min(1, fadeSpeed * delta);
+                this.monsterSound.setVolume(Math.max(0, this.monsterVolume));
+            }
+        }
+
+        // Battery depletion logic (paused when menu is open / controls unlocked)
+        if (this.controls.isLocked && !this.isGameOver && this.flashlight && this.flashlight.visible) {
+            const depletionRate = 3; // 3% per second
+            this.batteryLevel -= depletionRate * delta;
+            
+            if (this.batteryLevel <= 0) {
+                this.batteryLevel = 0;
+                this.flashlight.visible = false;
+                if (this.flashlightHalo) this.flashlightHalo.visible = false;
+            }
+            
+            // Update UI
+            const batteryBar = document.getElementById('battery-bar');
+            const batteryText = document.getElementById('battery-text');
+            if (batteryBar) batteryBar.style.width = this.batteryLevel + '%';
+            if (batteryText) batteryText.innerText = Math.round(this.batteryLevel) + '%';
+            
+            // Change color if low
+            if (batteryBar) {
+                if (this.batteryLevel < 20) {
+                    batteryBar.style.background = 'linear-gradient(90deg, #bb2222, #ff4444)';
+                } else if (this.batteryLevel < 50) {
+                    batteryBar.style.background = 'linear-gradient(90deg, #bbbb22, #ffff44)';
+                } else {
+                    batteryBar.style.background = 'linear-gradient(90deg, #22bb22, #44ff44)';
+                }
+            }
         }
 
         // Star twinkle — gentle pulse via opacity
         if (this.starMaterial) {
-            this.starMaterial.opacity = 0.7 + Math.sin(performance.now() * 0.0008) * 0.15;
+            this.starMaterial.opacity = 0.7 + Math.sin(time * 0.0008) * 0.15;
         }
 
-        const time = performance.now();
+
+
 
         // FPS Calculation
         this.fpsFrameCount++;
@@ -1075,7 +1109,7 @@ class Game {
 
         // Move the moon slowly
         if (this.moonLight) {
-            const sunSpeed = 0.00001; 
+            const sunSpeed = 0.000013; // 30% faster than 0.00001
             this.moonLight.position.x = Math.sin(time * sunSpeed) * 30;
             this.moonLight.position.z = Math.cos(time * sunSpeed) * 30;
             this.moonLight.position.y = 40;
@@ -1086,20 +1120,20 @@ class Game {
 
 
         if (this.controls.isLocked && !this.isGameOver) {
-            const delta = (time - this.prevTime) / 1000;
+
 
             if (this.startTime && !this.monsterSpawned) {
                 const elapsed = Date.now() - this.startTime;
-                if (elapsed > 5000) {
+                if (elapsed > 10000) {
                     this.spawnMonster();
                     document.getElementById('monster-timer').textContent = "Active!";
                 } else {
-                    document.getElementById('monster-timer').textContent = ((5000 - elapsed) / 1000).toFixed(1) + "s";
+                    document.getElementById('monster-timer').textContent = ((10000 - elapsed) / 1000).toFixed(1) + "s";
                 }
             } else if (this.monsterSpawned) {
                 document.getElementById('monster-timer').textContent = "Active!";
             } else {
-                document.getElementById('monster-timer').textContent = "5.0s";
+                document.getElementById('monster-timer').textContent = "10.0s";
             }
 
             if (this.monsterSpawned) {
@@ -1117,7 +1151,8 @@ class Game {
             this.velocity.x -= this.velocity.x * 10.0 * delta;
             this.velocity.z -= this.velocity.z * 10.0 * delta;
             // Gravity
-            this.velocity.y -= 9.8 * 4.0 * delta; // Reduced gravity multiplier for smoother jump curve
+            this.velocity.y -= this.gravityValue * delta; 
+
 
             this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
             this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
@@ -1185,45 +1220,8 @@ class Game {
                 }
             }
 
-            // --- KEY LOGIC ---
-            for (let i = this.keys.length - 1; i >= 0; i--) {
-                const keyMesh = this.keys[i];
-                if (keyMesh.userData.collected) continue;
-                
-                keyMesh.rotation.y += delta * 2;
-                
-                if (this.camera.position.distanceTo(keyMesh.position) < 0.8) {
-                    keyMesh.visible = false;
-                    keyMesh.userData.collected = true;
-                    // Turn off light immediately
-                    keyMesh.children.forEach(c => {
-                        if (c.isPointLight) c.intensity = 0;
-                    });
-                    
-                    this.playerKeys++;
-                    document.getElementById('keys').innerText = this.playerKeys;
-                }
-            }
-            
-            // --- DOOR UNLOCK LOGIC ---
-            if (this.playerKeys > 0) {
-                for (let i = this.lockedDoors.length - 1; i >= 0; i--) {
-                    const door = this.lockedDoors[i];
-                    if (this.camera.position.distanceTo(door.position) < 1.0) {
-                        // Open the door
-                        this.scene.remove(door);
-                        this.lockedDoors.splice(i, 1);
-                        this.playerKeys--;
-                        document.getElementById('keys').innerText = this.playerKeys;
-                        
-                        // Clear collision
-                        const dx = door.userData.gridX;
-                        const dy = door.userData.gridY;
-                        this.grid[dy][dx] = 0;
-                        break; // Only open one maximum per frame
-                    }
-                }
-            }
+            // --- KEY/DOOR LOGIC REMOVED ---
+
 
             const oldPos = this.camera.position.clone();
             
@@ -1270,14 +1268,40 @@ class Game {
                 console.log(`Player World: (${this.camera.position.x.toFixed(2)}, ${this.camera.position.z.toFixed(2)}) | Grid: [${gy}, ${gx}]`);
             }
 
+            // --- POWERUP LOGIC ---
+            for (let i = this.powerups.length - 1; i >= 0; i--) {
+                const powerup = this.powerups[i];
+                if (this.camera.position.distanceTo(powerup.position) < 0.8) {
+                    this.scene.remove(powerup);
+                    this.powerups.splice(i, 1);
+                    this.applyPowerup(powerup.userData.type);
+                }
+            }
+
+            // --- BATTERY LOGIC ---
+            for (let i = this.batteries.length - 1; i >= 0; i--) {
+                const battery = this.batteries[i];
+                battery.rotation.y += delta * 2;
+                if (this.camera.position.distanceTo(battery.position) < 0.8) {
+                    this.scene.remove(battery);
+                    this.batteries.splice(i, 1);
+                    this.batteryLevel = Math.min(100, this.batteryLevel + 25);
+                    // Force update UI immediately
+                    const batteryBar = document.getElementById('battery-bar');
+                    const batteryText = document.getElementById('battery-text');
+                    if (batteryBar) batteryBar.style.width = this.batteryLevel + '%';
+                    if (batteryText) batteryText.innerText = Math.round(this.batteryLevel) + '%';
+                }
+            }
+
             this.updateExploration();
             this.drawMinimap();
 
             const distToGoal = this.camera.position.distanceTo(this.goal.position);
-            // Increased trigger distance to align with walking into the door frame
-            if (distToGoal < 0.8) {
+            if (this.goal && distToGoal < 0.8) {
                 this.nextLevel();
             }
+
 
             if (this.startTime) {
                 const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
@@ -1285,9 +1309,8 @@ class Game {
                 const secs = (elapsed % 60).toString().padStart(2, '0');
                 document.getElementById('timer').textContent = `${mins}:${secs}`;
             }
-
-            this.prevTime = time;
         }
+
 
         if (this.goal) {
             this.goal.rotation.y += 0.02;
@@ -1304,7 +1327,7 @@ class Game {
         this.monster.position.set(0, 0.5, 1);
         this.monster.visible = true;
         
-        // Start sound
+        // Start sound with smooth fade-in
         if (this.monsterSound) {
             if (this.monsterSound.context.state === 'suspended') {
                 this.monsterSound.context.resume();
@@ -1312,6 +1335,9 @@ class Game {
             if (!this.monsterSound.isPlaying) {
                 this.monsterSound.play();
             }
+            // Start from silence and fade up to base volume
+            this.monsterVolume = 0;
+            this.monsterVolumeTarget = this.monsterBaseVolume;
         }
         
         this.monsterSpawned = true;
@@ -1497,7 +1523,8 @@ class Game {
         this.monsterSound.setMaxDistance(210);   // Audible up to 210 units away
         this.monsterSound.setRolloffFactor(1.2); // Smooth: loud close, quiet far
         this.monsterSound.setLoop(true);
-        this.monsterSound.setVolume(1.8);
+        // Start muted; we'll fade up when the monster actually spawns
+        this.monsterSound.setVolume(0);
 
         // Load the 5.5-minute haunting ambient track
         // Play from 3:00 (180s), loop back there when reaching 5:21 (321s)
@@ -1512,6 +1539,42 @@ class Game {
             console.warn('[Monster] Audio file failed, using synthesized fallback:', err);
             this._initSynthMonsterSound();
         });
+    }
+
+    initFlashlightSounds() {
+        const ctx = this.listener.context;
+        if (!ctx) return;
+
+        const createClickBuffer = (baseFreq) => {
+            const duration = 0.08;
+            const sampleRate = ctx.sampleRate;
+            const length = Math.floor(duration * sampleRate);
+            const buffer = ctx.createBuffer(1, length, sampleRate);
+            const data = buffer.getChannelData(0);
+
+            for (let i = 0; i < length; i++) {
+                const t = i / sampleRate;
+                const env = Math.exp(-t * 40); // fast decay
+                const tone = Math.sin(2 * Math.PI * baseFreq * t);
+                const noise = (Math.random() * 2 - 1) * 0.3;
+                data[i] = (tone * 0.7 + noise * 0.5) * env;
+            }
+
+            return buffer;
+        };
+
+        this.flashlightOnSound = new THREE.Audio(this.listener);
+        this.flashlightOffSound = new THREE.Audio(this.listener);
+
+        const onBuf = createClickBuffer(900);
+        const offBuf = createClickBuffer(500);
+
+        this.flashlightOnSound.setBuffer(onBuf);
+        this.flashlightOffSound.setBuffer(offBuf);
+
+        // Attach to camera so it follows the player
+        this.camera.add(this.flashlightOnSound);
+        this.camera.add(this.flashlightOffSound);
     }
 
     _initSynthMonsterSound() {
@@ -1845,6 +1908,21 @@ class Game {
         this.clearMaze();
         this.buildMaze();
     }
+
+    toggleMenu() {
+        if (this.controls.isLocked) {
+            this.controls.unlock();
+        } else {
+            this.controls.lock();
+        }
+    }
+
+    toggleMute() {
+        this.isMuted = !this.isMuted;
+        this.listener.setMasterVolume(this.isMuted ? 0 : 1);
+        document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
+    }
 }
+
 
 new Game();

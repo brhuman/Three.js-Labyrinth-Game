@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Death Labyrinth | 3D Maze</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
@@ -16,18 +17,17 @@
           <h3>Survival Guide</h3>
           <p>Explore the darkness, but beware the footsteps. If the monster catches you, you die.</p>
           <div class="item-list">
-            <div class="item"><span class="item-icon">🗝️</span> <span><strong>Keys:</strong> Open locked doors</span></div>
+
             <div class="item"><span class="item-icon" style="color:#0088ff;">🔵</span> <span><strong>SPD:</strong> Move faster</span></div>
             <div class="item"><span class="item-icon" style="color:#aaaa00;">🟡</span> <span><strong>SLW:</strong> Slow the monster</span></div>
+            <div class="item"><span class="item-icon" style="color:#22ff22;">🔋</span> <span><strong>BAT:</strong> +25% Flashlight</span></div>
             <div class="item"><span class="item-icon">🪵</span> <span><strong>Beams:</strong> Press 'C' to crouch</span></div>
+
           </div>
         </div>
 
-        <div class="menu-options" style="display: flex; align-items: center; justify-content: center; gap: 10px; pointer-events: auto;">
-            <label for="fow-toggle" style="cursor: pointer; font-size: 0.9rem; opacity: 0.9;">Fog of War:</label>
-            <input type="checkbox" id="fow-toggle" checked style="cursor: pointer; width: 18px; height: 18px;">
-        </div>
         <button id="start-btn">ENTER THE MAZE</button>
+
 
         <div class="lore-box" style="margin-top: 16px;">
           <h3>Controls</h3>
@@ -38,9 +38,16 @@
             <div class="item"><span class="item-icon">🫣</span> <span><strong>C / Ctrl</strong> — Crouch</span></div>
             <div class="item"><span class="item-icon">⏎</span> <span><strong>Enter</strong> — Start</span></div>
             <div class="item"><span class="item-icon">🔇</span> <span><strong>M</strong> — Mute / Unmute</span></div>
-            <div class="item"><span class="item-icon">⛶</span> <span><strong>F</strong> — Fullscreen</span></div>
+            <div class="item"><span class="item-icon">🔦</span> <span><strong>F</strong> — Flashlight</span></div>
+            <div class="item"><span class="item-icon">⛶</span> <span><strong>L</strong> — Fullscreen</span></div>
           </div>
         </div>
+
+        <div class="menu-options" style="display: flex; align-items: center; justify-content: center; gap: 10px; pointer-events: auto; margin-top: 15px;">
+            <label for="fow-toggle" style="cursor: pointer; font-size: 0.8rem; opacity: 0.7;">Fog of War:</label>
+            <input type="checkbox" id="fow-toggle" checked style="cursor: pointer; width: 16px; height: 16px;">
+        </div>
+
       </div>
 
       <div id="game-over" class="glass-panel" style="display: none;">
@@ -52,7 +59,7 @@
       <div id="mute-btn" class="glass-panel">
         <span id="mute-icon">🔊</span>
       </div>
-      <div id="fullscreen-btn" class="glass-panel" style="left: auto; right: 60px; bottom: 16px; position: fixed; cursor: pointer; font-size: 1.2rem; padding: 6px 10px;" title="Fullscreen (F)">
+      <div id="fullscreen-btn" class="glass-panel" style="left: auto; right: 60px; bottom: 16px; position: fixed; cursor: pointer; font-size: 1.2rem; padding: 6px 10px;" title="Fullscreen (L)">
         <span id="fullscreen-icon">⛶</span>
       </div>
 
@@ -60,13 +67,19 @@
         <div id="minimap-container" class="glass-panel">
           <canvas id="minimap"></canvas>
         </div>
+        <div id="battery-container" class="glass-panel" style="margin-top: 10px; padding: 10px;">
+          <div style="font-size: 0.8rem; margin-bottom: 5px; color: #44ff44; font-weight: bold;">BATTERY</div>
+          <div style="width: 100%; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; overflow: hidden; border: 1px solid rgba(68, 255, 68, 0.3);">
+            <div id="battery-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #22bb22, #44ff44); transition: width 0.3s ease;"></div>
+          </div>
+          <div id="battery-text" style="font-size: 0.7rem; text-align: right; margin-top: 4px; color: #44ff44;">100%</div>
+        </div>
+
         <div class="glass-panel-group">
           <div class="glass-panel">
             <div class="stats">Level: <span id="level">1</span></div>
           </div>
-          <div class="glass-panel">
-            <div class="stats">Keys: <span id="keys">0</span></div>
-          </div>
+
           <div class="glass-panel">
             <div class="stats">Time: <span id="timer">00:00</span></div>
           </div>
