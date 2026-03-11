@@ -3,22 +3,57 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Neon Labyrinth | 3D Maze</title>
+    <title>Death Labyrinth | 3D Maze</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <div id="ui-overlay">
       <div id="menu" class="glass-panel">
-        <h1>NEON LABYRINTH</h1>
-        <p>Find your way out of the procedural maze.</p>
+        <h1>DEATH LABYRINTH</h1>
+        <p>You have awakened in an endlessly shifting maze.<br>Find the exit before <em>it</em> finds you.</p>
+
+        <div class="lore-box">
+          <h3>Survival Guide</h3>
+          <p>Explore the darkness, but beware the footsteps. If the monster catches you, you die.</p>
+          <div class="item-list">
+            <div class="item"><span class="item-icon">🗝️</span> <span><strong>Keys:</strong> Open locked doors</span></div>
+            <div class="item"><span class="item-icon" style="color:#0088ff;">🔵</span> <span><strong>SPD:</strong> Move faster</span></div>
+            <div class="item"><span class="item-icon" style="color:#aaaa00;">🟡</span> <span><strong>SLW:</strong> Slow the monster</span></div>
+            <div class="item"><span class="item-icon">🪵</span> <span><strong>Beams:</strong> Press 'C' to crouch</span></div>
+          </div>
+        </div>
+
+        <div class="menu-options" style="display: flex; align-items: center; justify-content: center; gap: 10px; pointer-events: auto;">
+            <label for="fow-toggle" style="cursor: pointer; font-size: 0.9rem; opacity: 0.9;">Fog of War:</label>
+            <input type="checkbox" id="fow-toggle" checked style="cursor: pointer; width: 18px; height: 18px;">
+        </div>
         <button id="start-btn">ENTER THE MAZE</button>
-        <p style="margin-top: 20px; opacity: 0.6; font-size: 0.8rem;">WASD to Move • Mouse to Look</p>
+
+        <div class="lore-box" style="margin-top: 16px;">
+          <h3>Controls</h3>
+          <div class="item-list" style="grid-template-columns: 1fr 1fr;">
+            <div class="item"><span class="item-icon">⬆⬇⬅➡</span> <span><strong>WASD</strong> — Move</span></div>
+            <div class="item"><span class="item-icon">🖱️</span> <span><strong>Mouse</strong> — Look</span></div>
+            <div class="item"><span class="item-icon">🦘</span> <span><strong>Space</strong> — Jump</span></div>
+            <div class="item"><span class="item-icon">🫣</span> <span><strong>C / Ctrl</strong> — Crouch</span></div>
+            <div class="item"><span class="item-icon">⏎</span> <span><strong>Enter</strong> — Start</span></div>
+            <div class="item"><span class="item-icon">🔇</span> <span><strong>M</strong> — Mute / Unmute</span></div>
+            <div class="item"><span class="item-icon">⛶</span> <span><strong>F</strong> — Fullscreen</span></div>
+          </div>
+        </div>
       </div>
 
       <div id="game-over" class="glass-panel" style="display: none;">
-        <h1 style="background: linear-gradient(45deg, #ff4c4c, #ff0000); -webkit-background-clip: text; color: transparent;">YOU DIED</h1>
-        <p>The monster caught you.</p>
-        <button id="restart-btn" style="background: #ff0000;">TRY AGAIN</button>
+        <h1 style="color: #ff3333; text-shadow: 0 0 15px rgba(255, 0, 0, 0.8); background: none; -webkit-text-fill-color: initial;">YOU DIED</h1>
+        <p style="color: #ffffff; font-size: 1.2rem; margin-bottom: 20px;">The monster caught you.</p>
+        <button id="restart-btn">TRY AGAIN</button>
+      </div>
+
+      <div id="mute-btn" class="glass-panel">
+        <span id="mute-icon">🔊</span>
+      </div>
+      <div id="fullscreen-btn" class="glass-panel" style="left: auto; right: 60px; bottom: 16px; position: fixed; cursor: pointer; font-size: 1.2rem; padding: 6px 10px;" title="Fullscreen (F)">
+        <span id="fullscreen-icon">⛶</span>
       </div>
 
       <div id="hud">
@@ -37,6 +72,15 @@
           </div>
           <div class="glass-panel">
             <div class="stats">Monster: <span id="monster-timer" style="color: #ff4c4c;">5.0s</span></div>
+          </div>
+          <div class="glass-panel" style="border-color: #00ffff;">
+            <div class="stats" style="color: #00ffff;">FPS: <span id="fps">60</span></div>
+          </div>
+          <div id="bonus-speed-indicator" class="glass-panel" style="display: none; border-color: #00ffff;">
+            <div class="stats" style="color: #00ffff;">Speed Boost: <span id="bonus-speed-time">15s</span></div>
+          </div>
+          <div id="bonus-indicator" class="glass-panel" style="display: none; border-color: #ff4444;">
+            <div class="stats" style="color: #ff4444;">Monster Slow: <span id="bonus-time">20s</span></div>
           </div>
         </div>
       </div>
