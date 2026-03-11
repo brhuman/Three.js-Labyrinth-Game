@@ -127,8 +127,8 @@ class Game {
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
-        // Player-held torch light (attached to camera) - dimmed and steady per request
-        this.playerLight = new THREE.PointLight(0xffaa44, 0.5, 7); // Very dim warm orange
+        // Player-held torch light (attached to camera) - ultra-dim, long-range steady glow
+        this.playerLight = new THREE.PointLight(0xffaa44, 0.1, 15); // Long range, low intensity orange
         this.playerLight.position.set(0.3, -0.2, -0.2); // Positioned slightly to the side/front
         this.camera.add(this.playerLight);
         this.scene.add(this.camera);
@@ -1040,9 +1040,9 @@ class Game {
             }
         });
 
-        // Player torch (steady per request)
+        // Player torch (ultra-dim, long-range, steady)
         if (this.playerLight) {
-            this.playerLight.intensity = 0.5;
+            this.playerLight.intensity = 0.1;
             // Removed wiggle for "steady" effect
             this.playerLight.position.set(0.3, -0.2, -0.2);
         }
