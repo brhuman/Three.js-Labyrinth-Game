@@ -50,10 +50,18 @@ class Game {
         this.basePlayerSpeed = 19.6; // Base player speed
         this.playerSpeed = this.basePlayerSpeed;
 
+        // Difficulty settings (moved here to fix initialization order)
+        this.difficulty = 'hard'; // Default difficulty (Hard as requested)
+        this.difficultyMultipliers = {
+            easy: 0.5,    // 50% monster speed
+            normal: 0.8,  // 80% monster speed (current default)
+            hard: 1.0     // 100% monster speed
+        };
+
         // Effective player speed is playerSpeed / 10 (due to friction)
-        // User wants monster to be 20% slower than player
+        // User wants monster to be 20% slower than player (normal difficulty)
         this.baseMonsterSpeed = (this.basePlayerSpeed / 10) * 0.8; 
-        this.monsterSpeed = this.baseMonsterSpeed;
+        this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
         this.monsterTextures = [];
         this.useFogOfWar = true;
         this.monsterBaseVolume = 1.8;
@@ -115,6 +123,9 @@ class Game {
         this.lastUnlockTime = 0;
         this.totalPausedDuration = 0;
         this.flashlightHintShown = false; // Track if flashlight hint has been shown
+        this.fullscreenHintShown = false; // Track if fullscreen hint has been shown
+        this.runMessageShown = false; // Track if RUN message has been shown
+        this.mazesCompleted = 0; // Track completed mazes for statistics
         
         // Flashlight optimization
         this.flashlightDebounceTime = 0;
@@ -378,6 +389,7 @@ class Game {
                 // Reset spawn conditions
                 this.playerLeftStartArea = false;
                 this.leftStartTime = null;
+                this.runMessageShown = false;
                 
                 if (this.monsterSound && this.monsterSound.isPlaying) {
                     this.stopAudioSafely(this.monsterSound);
@@ -404,6 +416,10 @@ class Game {
         const toggleMute = this.toggleMute;
 
         this.toggleFullscreen = () => {
+            // Prevent rapid toggling that could cause freezes
+            if (this.isFullscreenToggling) {
+                return;
+            }
 
             const el = document.body;
             const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -430,22 +446,47 @@ class Game {
             } else {
                 this.isFullscreenToggling = true;
                 const exit = document.exitFullscreen?.bind(document) || document.webkitExitFullscreen?.bind(document);
-                if (exit) exit();
+                if (exit) {
+                    exit().catch(e => {
+                        console.warn('Exit fullscreen error:', e);
+                        this.isFullscreenToggling = false;
+                    });
+                } else {
+                    this.isFullscreenToggling = false;
+                }
             }
         };
         document.addEventListener('fullscreenchange', () => {
             const icon = document.getElementById('fullscreen-icon');
             if (icon) icon.textContent = document.fullscreenElement ? '✕' : '⛶';
             
-            // Allow menu again after transition
-            setTimeout(() => { this.isFullscreenToggling = false; }, 100);
+            // Always reset toggling state when fullscreen changes
+            this.isFullscreenToggling = false;
+            
+            // If we just entered fullscreen and game is active, restore pointer lock
+            if (document.fullscreenElement && this.gameStarted && !this.isGameOver && this.isPaused) {
+                setTimeout(() => {
+                    if (this.controls && !this.controls.isLocked) {
+                        this.controls.lock();
+                    }
+                }, 100);
+            }
         });
         document.addEventListener('webkitfullscreenchange', () => {
             const icon = document.getElementById('fullscreen-icon');
             if (icon) icon.textContent = document.webkitFullscreenElement ? '✕' : '⛶';
             
-            // Allow menu again after transition
-            setTimeout(() => { this.isFullscreenToggling = false; }, 100);
+            // Always reset toggling state when fullscreen changes
+            this.isFullscreenToggling = false;
+            
+            // If we just entered fullscreen and game is active, restore pointer lock
+            if (document.webkitFullscreenElement && this.gameStarted && !this.isGameOver && this.isPaused) {
+                setTimeout(() => {
+                    if (this.controls && !this.controls.isLocked) {
+                        this.controls.lock();
+                    }
+                }, 100);
+            }
         });
 
         // Set initial icon (sound ON by default)
@@ -462,6 +503,9 @@ class Game {
             e.stopPropagation();
             this.toggleFullscreen();
         });
+
+        // Difficulty selection
+        this.setupDifficultySelection();
 
         startBtn.addEventListener('click', startGame);
         restartBtn.addEventListener('click', () => {
@@ -486,11 +530,36 @@ class Game {
                 this.monsterSound.context.resume();
             }
             
-            // Show flashlight hint for first-time players after 15 seconds
-            if (!this.flashlightHintShown) {
+            // Show appropriate hint after 10 seconds based on level
+            if (this.level === 1 && !this.fullscreenHintShown) {
                 setTimeout(() => {
                     // Only show if game is still active and hint hasn't been shown yet
-                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver) {
+                    if (!this.fullscreenHintShown && this.controls.isLocked && !this.isGameOver && this.level === 1) {
+                        const hint = document.getElementById('fullscreen-hint');
+                        hint.style.display = 'block';
+                        hint.classList.add('show');
+                        this.fullscreenHintShown = true;
+                        
+                        // Start fading after 3 seconds from appearance
+                        setTimeout(() => {
+                            if (hint && hint.style.display !== 'none') {
+                                hint.classList.add('fade-out');
+                            }
+                        }, 3000);
+                        
+                        // Completely hide after 5 seconds from appearance
+                        setTimeout(() => {
+                            if (hint && hint.style.display !== 'none') {
+                                hint.style.display = 'none';
+                                hint.classList.remove('show', 'fade-out');
+                            }
+                        }, 5000);
+                    }
+                }, 10000); // Wait 10 seconds before showing hint
+            } else if (this.level === 4 && !this.flashlightHintShown) {
+                setTimeout(() => {
+                    // Only show if game is still active and hint hasn't been shown yet
+                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver && this.level === 4) {
                         const hint = document.getElementById('flashlight-hint');
                         hint.style.display = 'block';
                         hint.classList.add('show');
@@ -511,7 +580,7 @@ class Game {
                             }
                         }, 5000);
                     }
-                }, 15000); // Wait 15 seconds before showing hint
+                }, 10000); // Wait 10 seconds before showing hint
             }
             
             // Resume timer by adjusting startTime for the paused duration
@@ -638,6 +707,45 @@ class Game {
                 }
             });
         }
+    }
+
+    setupDifficultySelection() {
+        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
+        const difficultyDescription = document.querySelector('.difficulty-description');
+        
+        const updateDifficulty = (selectedDifficulty) => {
+            this.difficulty = selectedDifficulty;
+            
+            // Update button states
+            difficultyButtons.forEach(btn => {
+                if (btn.dataset.difficulty === selectedDifficulty) {
+                    btn.classList.add('selected');
+                } else {
+                    btn.classList.remove('selected');
+                }
+            });
+            
+            // Update description
+            const speedPercentage = Math.round(this.difficultyMultipliers[selectedDifficulty] * 100);
+            difficultyDescription.textContent = `Monster speed: ${speedPercentage}% (${selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1)})`;
+            
+            // Update monster speed if game is not started
+            if (!this.gameStarted) {
+                this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
+            }
+        };
+        
+        // Add click listeners to difficulty buttons
+        difficultyButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const difficulty = btn.dataset.difficulty;
+                updateDifficulty(difficulty);
+            });
+        });
+        
+        // Initialize with default difficulty
+        updateDifficulty(this.difficulty);
     }
 
     initTextureLoading() {
@@ -1080,27 +1188,27 @@ class Game {
         
         let spaceIdx = 0;
 
-        // 1. Spawn Powerups near the start area
+        // 1. Spawn Powerups far from start area (after player leaves safe zone)
         const powerupTypes = this.getPowerupTypesForLevel();
-        const powerupPositions = this.selectNearStartPositions(emptySpaces, powerupTypes.length, 5); // Max distance 5 from start
+        const powerupPositions = this.selectFarFromStartPositions(emptySpaces, powerupTypes.length, 8); // Min distance 8 from start
         for (let i = 0; i < powerupTypes.length && i < powerupPositions.length; i++) {
             const pos = powerupPositions[i];
             this.spawnPowerup(pos.x, pos.y, powerupTypes[i]);
         }
 
-        // 2. Spawn Batteries (progressive: 1 on level 1, 2 on level 2, 3 on level 3, 4+ on level 4+)
+        // 2. Spawn Batteries (progressive: 0 on level 1, 1 on level 2, 2 on level 3, 3+ on level 4+)
         let numBatteries;
         if (this.level === 1) {
-            numBatteries = 1; // Level 1: minimal batteries
+            numBatteries = 0; // Level 1: no batteries
         } else if (this.level === 2) {
-            numBatteries = 2; // Level 2: few batteries  
+            numBatteries = 1; // Level 2: minimal batteries  
         } else if (this.level === 3) {
-            numBatteries = 3; // Level 3: more batteries
+            numBatteries = 2; // Level 3: few batteries
         } else {
-            numBatteries = 4; // Level 4+: normal amount
+            numBatteries = 3; // Level 4+: normal amount
         }
         
-        const batteryPositions = this.selectDistantPositions(emptySpaces, numBatteries, 4); // Min distance 4
+        const batteryPositions = this.selectFarFromStartPositions(emptySpaces, numBatteries, 8); // Min distance 8 from start
         for (const pos of batteryPositions) {
             this.spawnBattery(pos.x, pos.y);
         }
@@ -1150,24 +1258,24 @@ class Game {
         // Start Door (Closed)
         this.createDoor(-0.4, 1, false);
 
-        // End Door (Open) with green glow
-        this.createDoor(exitX, exitZ, true);
+        // End Door (Open) frame
+        this.createDoor(exitX, exitZ, true, exitSide);
 
-        // Goal zone inside the open door with enhanced green glow
-        const goalGeometry = new THREE.BoxGeometry(0.2, 1.8, 0.8);
-        const goalMaterial = new THREE.MeshPhongMaterial({ 
+        // Green glowing floor area instead of door panel
+        const floorGlowGeometry = new THREE.BoxGeometry(1, 0.05, 1);
+        const floorGlowMaterial = new THREE.MeshPhongMaterial({ 
             color: 0x00ff00, 
             emissive: 0x00ff00,
-            emissiveIntensity: 0.8, // Increased glow
+            emissiveIntensity: 1.2,
             transparent: true,
-            opacity: 0.4
+            opacity: 0.6
         });
-        this.goal = new THREE.Mesh(goalGeometry, goalMaterial);
-        this.goal.position.set(exitX, 0.4, exitZ);
+        this.goal = new THREE.Mesh(floorGlowGeometry, floorGlowMaterial);
+        this.goal.position.set(exitX, 0.025, exitZ); // Slightly above floor
         
         // Add green point light for better visibility
-        this.goalLight = new THREE.PointLight(0x00ff00, 2, 8);
-        this.goalLight.position.set(exitX, 1.5, exitZ);
+        this.goalLight = new THREE.PointLight(0x00ff00, 3, 10);
+        this.goalLight.position.set(exitX, 0.5, exitZ); // Lower position for floor glow
         this.scene.add(this.goalLight);
 
         document.getElementById('level').textContent = this.level;
@@ -1176,7 +1284,7 @@ class Game {
         this.camera.lookAt(2, this.baseHeight, 1); // Смотрим дальше в лабиринт
     }
 
-    createDoor(x, z, isOpen) {
+    createDoor(x, z, isOpen, exitSide = null) {
         const doorMaterial = new THREE.MeshPhongMaterial({ 
             map: this.textures.floor,
             color: isOpen ? 0x00ff00 : 0x885533, // Green tint for open doors, dark wood for closed
@@ -1194,16 +1302,34 @@ class Game {
             door.receiveShadow = true;
             this.scene.add(door);
         } else {
+            // Determine door orientation based on exit side
+            let isRotated = false;
+            if (exitSide === 'right') {
+                // Exit is on right wall, so door should face inward (along -X axis)
+                isRotated = true;
+            }
+            // For bottom wall exit, door faces inward (along -Z axis) - no rotation needed
+            
             // Open door frame
             const frameGeo = new THREE.BoxGeometry(0.1, 1.1, 0.2);
             const leftFrame = new THREE.Mesh(frameGeo, doorMaterial);
-            leftFrame.position.set(x, 0.55, z - 0.4);
+            if (isRotated) {
+                leftFrame.position.set(x - 0.4, 0.55, z);
+                leftFrame.rotation.y = Math.PI / 2;
+            } else {
+                leftFrame.position.set(x, 0.55, z - 0.4);
+            }
             leftFrame.castShadow = true;
             leftFrame.receiveShadow = true;
             this.scene.add(leftFrame);
 
             const rightFrame = new THREE.Mesh(frameGeo, doorMaterial);
-            rightFrame.position.set(x, 0.55, z + 0.4);
+            if (isRotated) {
+                rightFrame.position.set(x + 0.4, 0.55, z);
+                rightFrame.rotation.y = Math.PI / 2;
+            } else {
+                rightFrame.position.set(x, 0.55, z + 0.4);
+            }
             rightFrame.castShadow = true;
             rightFrame.receiveShadow = true;
             this.scene.add(rightFrame);
@@ -1213,6 +1339,9 @@ class Game {
             topFrame.position.set(x, 1.2, z); // 1.1 + 0.1
             topFrame.castShadow = true;
             topFrame.receiveShadow = true;
+            if (isRotated) {
+                topFrame.rotation.y = Math.PI / 2;
+            }
             this.scene.add(topFrame);
         }
     }
@@ -1350,6 +1479,30 @@ class Game {
         // Take the first 'count' positions (or fewer if not enough spaces)
         for (let i = 0; i < count && i < nearStartSpaces.length; i++) {
             positions.push(nearStartSpaces[i]);
+        }
+        
+        return positions;
+    }
+
+    selectFarFromStartPositions(availableSpaces, count, minDistance) {
+        const positions = [];
+        const startX = 0, startZ = 1; // Start position
+        
+        // Filter spaces that are at least minDistance from start
+        const farFromStartSpaces = availableSpaces.filter(space => {
+            const distance = Math.sqrt(
+                Math.pow(space.x - startX, 2) + 
+                Math.pow(space.y - startZ, 2)
+            );
+            return distance >= minDistance;
+        });
+        
+        // Shuffle the far-from-start spaces
+        farFromStartSpaces.sort(() => Math.random() - 0.5);
+        
+        // Take the first 'count' positions (or fewer if not enough spaces)
+        for (let i = 0; i < count && i < farFromStartSpaces.length; i++) {
+            positions.push(farFromStartSpaces[i]);
         }
         
         return positions;
@@ -1658,24 +1811,7 @@ createObstacle(x, y, material, type) {
             case 'KeyC':
                 this.crouchKeyPressed = true;
                 break;
-            case 'KeyM':
-                this.toggleMute();
-                break;
             case 'KeyF':
-                // Hide flashlight hint if it's visible
-                const hint = document.getElementById('flashlight-hint');
-                if (hint && hint.style.display !== 'none') {
-                    hint.style.display = 'none';
-                    hint.classList.remove('show', 'fade-out');
-                }
-                
-                // Debounce to prevent multiple rapid toggles
-                const now = performance.now();
-                if (now - this.flashlightDebounceTime < this.flashlightDebounceDelay) {
-                    break;
-                }
-                this.flashlightDebounceTime = now;
-                
                 if (this.flashlight) {
                     const willTurnOn = !this.flashlight.visible;
                     
@@ -1973,11 +2109,19 @@ createObstacle(x, y, material, type) {
         if (this.controls.isLocked && !this.isGameOver) {
 
 
+            // Check if player left start area
+            this.checkPlayerLeftStartArea();
+            
             if (this.startTime && !this.monsterSpawned) {
-                // Timer starts immediately with level-based delay
-                const elapsed = Date.now() - this.startTime;
-                const spawnConditionMet = elapsed > this.monsterSpawnDelay;
-                const timeUntilSpawn = Math.max(0, (this.monsterSpawnDelay - elapsed) / 1000);
+                // Start 5-second countdown when player leaves start area
+                let spawnConditionMet = false;
+                let timeUntilSpawn = 999;
+                
+                if (this.playerLeftStartArea && this.leftStartTime) {
+                    const elapsed = Date.now() - this.leftStartTime;
+                    timeUntilSpawn = Math.max(0, 5000 - elapsed) / 1000; // 5 seconds
+                    spawnConditionMet = elapsed >= 5000;
+                }
                 
                 const countdownElement = document.getElementById('monster-countdown');
                 const numberElement = countdownElement.querySelector('.countdown-number');
@@ -1989,13 +2133,17 @@ createObstacle(x, y, material, type) {
                     numberElement.textContent = "RUN";
                     numberElement.className = "countdown-number run";
                     textElement.textContent = "MONSTER IS HERE";
+                    this.runMessageShown = true;
+                    
+                    // Make sure it's visible
+                    countdownElement.style.display = 'block';
                     
                     // Hide after 3 seconds
                     setTimeout(() => {
                         countdownElement.style.display = 'none';
                     }, 3000);
-                } else {
-                    // Show countdown
+                } else if (this.playerLeftStartArea && this.leftStartTime) {
+                    // Show countdown after leaving safe zone
                     countdownElement.style.display = 'block';
                     const displayTime = Math.ceil(timeUntilSpawn);
                     numberElement.textContent = displayTime;
@@ -2004,12 +2152,16 @@ createObstacle(x, y, material, type) {
                     numberElement.className = "countdown-number";
                     if (timeUntilSpawn <= 2) {
                         numberElement.classList.add("danger"); // Red, fast pulse
-                    } else if (timeUntilSpawn <= 5) {
+                    } else if (timeUntilSpawn <= 3) {
                         numberElement.classList.add("warning"); // Yellow, medium pulse
                     }
+                    textElement.textContent = "MONSTER COMING";
+                } else {
+                    // Hide countdown when in safe zone
+                    countdownElement.style.display = 'none';
                 }
-            } else if (this.monsterSpawned) {
-                // Hide countdown if monster is already spawned
+            } else if (this.monsterSpawned && !this.runMessageShown) {
+                // Hide countdown if monster is already spawned and RUN message was shown
                 const countdownElement = document.getElementById('monster-countdown');
                 countdownElement.style.display = 'none';
             } else {
@@ -2144,7 +2296,7 @@ createObstacle(x, y, material, type) {
                 this.slowPowerupRemaining -= delta;
                 document.getElementById('bonus-time').innerText = Math.ceil(this.slowPowerupRemaining) + 's';
                 if (this.slowPowerupRemaining <= 0) {
-                    this.monsterSpeed = this.baseMonsterSpeed;
+                    this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
                     document.getElementById('bonus-indicator').style.display = 'none';
                 }
             }
@@ -2203,8 +2355,12 @@ createObstacle(x, y, material, type) {
 
 
         if (this.goal) {
-            this.goal.rotation.y += 0.02;
-            this.goal.position.y = Math.sin(performance.now() * 0.005) * 0.1 + 0.2;
+            // Floor glow doesn't need to face player, but keep pulsing effect
+            const pulseIntensity = Math.sin(performance.now() * 0.003) * 0.3 + 0.7;
+            this.goal.material.emissiveIntensity = 1.2 * pulseIntensity;
+            
+            // Subtle floating animation for the floor glow
+            this.goal.position.y = 0.025 + Math.sin(performance.now() * 0.002) * 0.02;
         }
 
         this.renderer.render(this.scene, this.camera);
@@ -2246,7 +2402,7 @@ createObstacle(x, y, material, type) {
             this.updateMonsterTarget();
         }
         
-        // Stagger audio operations to reduce frame spike
+        // Delayed audio start to prevent crackling and add dramatic effect
         setTimeout(() => {
             if (this.monsterSound) {
                 if (this.monsterSound.context.state === 'suspended') {
@@ -2255,11 +2411,18 @@ createObstacle(x, y, material, type) {
                 if (!this.monsterSound.isPlaying) {
                     this.playAudioSafely(this.monsterSound, 'monster');
                 }
-                // Start from silence and fade up to base volume
+                // Start from silence with dramatic fade up
                 this.monsterVolume = 0;
+                this.monsterVolumeTarget = this.monsterBaseVolume * 1.2; // Initial boost for dramatic entrance
+            }
+        }, 800); // Delay audio by 800ms for smoother spawn
+        
+        // After 2 seconds, reduce to normal volume
+        setTimeout(() => {
+            if (this.monsterSound && this.monsterSpawned) {
                 this.monsterVolumeTarget = this.monsterBaseVolume;
             }
-        }, 100); // Delay audio by 100ms to spread the load
+        }, 2800);
         
         this.monsterSpawned = true;
     }
@@ -2464,11 +2627,11 @@ createObstacle(x, y, material, type) {
     initMonsterSound() {
         this.monsterSound = new THREE.PositionalAudio(this.listener);
 
-        // 3D Positional Audio — louder as player approaches
+        // 3D Positional Audio — louder as player approaches (reduced range)
         this.monsterSound.setDistanceModel('exponential');
-        this.monsterSound.setRefDistance(1.0);   // Full volume 1 unit away
-        this.monsterSound.setMaxDistance(210);   // Audible up to 210 units away
-        this.monsterSound.setRolloffFactor(1.2); // Smooth: loud close, quiet far
+        this.monsterSound.setRefDistance(1.5);   // Full volume 1.5 units away (increased for better close range)
+        this.monsterSound.setMaxDistance(120);   // Audible up to 120 units away (reduced from 210)
+        this.monsterSound.setRolloffFactor(1.8); // Steeper falloff for shorter hearing range
         this.monsterSound.setLoop(true);
         // Start muted; we'll fade up when the monster actually spawns
         this.monsterSound.setVolume(0);
@@ -2799,8 +2962,10 @@ createObstacle(x, y, material, type) {
             const moveDist = Math.sqrt(moveDx * moveDx + moveDz * moveDz);
             
             if (moveDist > 0.05) {
-                const moveX = (moveDx / moveDist) * this.monsterSpeed * delta;
-                const moveZ = (moveDz / moveDist) * this.monsterSpeed * delta;
+                // Monster slows down when crouching under obstacles (15% slowdown vs 30% for player)
+                const currentMonsterSpeed = this.monsterCrouchHeight > 0.01 ? this.monsterSpeed * 0.85 : this.monsterSpeed;
+                const moveX = (moveDx / moveDist) * currentMonsterSpeed * delta;
+                const moveZ = (moveDz / moveDist) * currentMonsterSpeed * delta;
                 
                 // Check if new position would be valid (not in wall, but allow crouch beams)
                 const newX = this.monster.position.x + moveX;
@@ -2961,14 +3126,28 @@ createObstacle(x, y, material, type) {
         this.controls.unlock();
         document.getElementById('game-over').style.display = 'block';
         
+        // Calculate final statistics
+        const finalLevel = this.level;
+        const timeElapsed = this.startTime ? (Date.now() - this.startTime + this.totalPausedDuration) : 0;
+        const minutes = Math.floor(timeElapsed / 60000);
+        const seconds = Math.floor((timeElapsed % 60000) / 1000);
+        const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update death statistics
+        document.getElementById('death-level').textContent = finalLevel;
+        document.getElementById('death-time').textContent = timeString;
+        document.getElementById('death-mazes').textContent = this.mazesCompleted;
+        
         this.playDeathScream();
         // Monster sound intentionally keeps playing here — creepy effect during death screen
 
         // Reset Game state without instantly restarting
+        const previousLevel = this.level; // Store for stats before reset
         this.level = 1; 
         this.mazeSize = this.baseMazeSize; // Reset to base size
         this.slowPowerupRemaining = 0;
-        this.monsterSpeed = this.baseMonsterSpeed;
+        this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
+        this.mazesCompleted = 0; // Reset completed mazes
         
         document.getElementById('monster-timer').textContent = "5.0s";
         document.getElementById('timer').textContent = "00:00";
@@ -3016,7 +3195,7 @@ createObstacle(x, y, material, type) {
 
         const px = this.camera.position.x;
         const pz = this.camera.position.z;
-        const radius = 3;
+        const radius = 1.5;
         
         // Always reveal the exact cell we are standing on securely
         const cx = Math.round(px);
@@ -3113,6 +3292,7 @@ createObstacle(x, y, material, type) {
     nextLevel() {
         try {
             this.level++;
+            this.mazesCompleted++; // Increment completed mazes counter
             
             this.startTime = Date.now();
             
@@ -3129,6 +3309,16 @@ createObstacle(x, y, material, type) {
             this.playerLeftStartArea = false;
             this.leftStartTime = null;
             this.monsterSpawnDelay = this.getMonsterSpawnDelay(); // Update delay for new level
+            
+            // Reset hint flags for new level (but keep them shown if already displayed)
+            if (this.level === 2) {
+                // Moving to level 2, reset flashlight hint for level 4
+                this.flashlightHintShown = false;
+            }
+            if (this.level > 1) {
+                // Moving past level 1, fullscreen hint won't be shown again anyway
+                // No need to reset fullscreenHintShown as it's level 1 only
+            }
             
             this.clearMaze();
             this.updateLighting();
@@ -3207,7 +3397,7 @@ createObstacle(x, y, material, type) {
             document.getElementById('bonus-speed-time').innerText = '15s';
         } else if (type === 'slow') {
             this.slowPowerupRemaining = 20;
-            this.monsterSpeed = this.baseMonsterSpeed * 0.5;
+            this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty] * 0.5;
             document.getElementById('bonus-indicator').style.display = 'block';
             document.getElementById('bonus-time').innerText = '20s';
         } else if (type === 'radar') {

@@ -56,6 +56,18 @@
           </div>
         </div>
 
+        <div class="difficulty-selection" style="margin-bottom: 20px;">
+          <h3>Difficulty</h3>
+          <div class="difficulty-buttons" style="display: flex; gap: 10px; justify-content: center;">
+            <button class="difficulty-btn" data-difficulty="easy">Easy</button>
+            <button class="difficulty-btn" data-difficulty="normal">Normal</button>
+            <button class="difficulty-btn selected" data-difficulty="hard">Hard</button>
+          </div>
+          <div class="difficulty-description" style="text-align: center; margin-top: 10px; font-size: 0.9rem; opacity: 0.7;">
+            Monster speed: 100% (Hard)
+          </div>
+        </div>
+
         <button id="start-btn">ENTER THE MAZE</button>
 
 
@@ -83,6 +95,23 @@
       <div id="game-over" class="glass-panel" style="display: none;">
         <h1 style="color: #ff3333; text-shadow: 0 0 15px rgba(255, 0, 0, 0.8); background: none; -webkit-text-fill-color: initial;">YOU DIED</h1>
         <p style="color: #ffffff; font-size: 1.2rem; margin-bottom: 20px;">The monster caught you.</p>
+        
+        <div class="death-stats" style="background: rgba(0, 0, 0, 0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 3px solid #ff3333;">
+          <h3 style="color: #ff3333; margin-top: 0; margin-bottom: 10px; font-size: 1.1rem;">FINAL STATISTICS</h3>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #cccccc;">Level Reached:</span>
+            <span id="death-level" style="color: #ffffff; font-weight: bold;">1</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #cccccc;">Time Survived:</span>
+            <span id="death-time" style="color: #ffffff; font-weight: bold;">00:00</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #cccccc;">Mazes Completed:</span>
+            <span id="death-mazes" style="color: #ffffff; font-weight: bold;">0</span>
+          </div>
+        </div>
+        
         <button id="restart-btn">TRY AGAIN</button>
       </div>
 
@@ -142,6 +171,13 @@
       <div class="flashlight-icon">🔦</div>
       <div class="flashlight-text">Press <kbd>F</kbd> to enable flashlight</div>
       <div class="flashlight-subtitle">Light your way through the darkness</div>
+    </div>
+    
+    <!-- Fullscreen Hint -->
+    <div id="fullscreen-hint" class="flashlight-hint" style="display: none;">
+      <div class="flashlight-icon">⛶</div>
+      <div class="flashlight-text">Press <kbd>L</kbd> to toggle fullscreen mode</div>
+      <div class="flashlight-subtitle">Immerse yourself in the maze</div>
     </div>
 
     <script type="module" src="/src/main.js"></script>
