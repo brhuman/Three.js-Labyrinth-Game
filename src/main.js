@@ -123,8 +123,8 @@ class Game {
         this.screamBuffers = [];
         this.flashlightOnSound = null;
         this.flashlightOffSound = null;
-        this.isMuted = false;
-        this.listener.setMasterVolume(1);
+        this.isMuted = localStorage.getItem('isMuted') === 'true';
+        this.listener.setMasterVolume(this.isMuted ? 0 : 1);
 
         this.isFullscreenToggling = false;
         this.gameStarted = false;
@@ -341,6 +341,10 @@ class Game {
 
         // Настраиваем освещение в зависимости от уровня
         this.updateLighting();
+
+        // Sync mute icon
+        const muteIcon = document.getElementById('mute-icon');
+        if (muteIcon) muteIcon.textContent = this.isMuted ? '🔇' : '🔊';
 
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
@@ -3365,9 +3369,11 @@ createObstacle(x, y, material, type) {
 
     toggleMute() {
         this.isMuted = !this.isMuted;
+        localStorage.setItem('isMuted', this.isMuted);
         const volume = this.isMuted ? 0 : 1;
-        this.listener.setMasterVolume(volume);
-        document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
+        if (this.listener) this.listener.setMasterVolume(volume);
+        const muteIcon = document.getElementById('mute-icon');
+        if (muteIcon) muteIcon.textContent = this.isMuted ? '🔇' : '🔊';
     }
 
     // Optimized audio utilities
