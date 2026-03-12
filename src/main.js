@@ -136,8 +136,8 @@ class Game {
         this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.84);
         this.moonLight.castShadow = true;
         // Max out shadow map for crispness
-        this.moonLight.shadow.mapSize.width = 4096;
-        this.moonLight.shadow.mapSize.height = 4096;
+        this.moonLight.shadow.mapSize.width = 1024;
+        this.moonLight.shadow.mapSize.height = 1024;
         this.moonLight.shadow.bias = -0.0005; // Slightly stronger bias to prevent acne but keep contact
         this.moonLight.shadow.normalBias = 0.01; // Reduced to prevent light pushing through thin walls
         this.moonLight.shadow.radius = 1;
@@ -148,8 +148,8 @@ class Game {
         this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.5, 20, Math.PI / 6, 0.5, 2);
         this.flashlight.position.set(0.3, -0.2, -0.2);
         this.flashlight.castShadow = true;
-        this.flashlight.shadow.mapSize.width = 1024;
-        this.flashlight.shadow.mapSize.height = 1024;
+        this.flashlight.shadow.mapSize.width = 512;
+        this.flashlight.shadow.mapSize.height = 512;
         this.camera.add(this.flashlight);
 
         // Flashlight Halo (Secondary soft light for scattering effect)
@@ -194,7 +194,7 @@ class Game {
         // --- STAR FIELD using THREE.Points ---
         // This is the best Three.js approach: all stars in a single draw call.
         // Stars are scattered on a sphere of radius 490 (inside sky at 500, outside clouds at 450).
-        const STAR_COUNT = 3000;
+        const STAR_COUNT = 1500;
         const starPositions = new Float32Array(STAR_COUNT * 3);
         const starColors = new Float32Array(STAR_COUNT * 3);
         const starSizes = new Float32Array(STAR_COUNT);
@@ -251,7 +251,7 @@ class Game {
             vertexColors: true,
             sizeAttenuation: true,
             transparent: true,
-            opacity: 0.9,
+            opacity: 0.7,
             depthWrite: false,
             blending: THREE.AdditiveBlending,
             fog: false // MUST be false: stars at distance 490 would be 100% fogged otherwise
@@ -678,6 +678,9 @@ class Game {
         this.moonLight.shadow.camera.near = 0.1;
         this.moonLight.shadow.camera.far = 100;
         this.moonLight.shadow.camera.updateProjectionMatrix();
+        // Reduce shadow map resolution
+        this.moonLight.shadow.mapSize.width = 1024;
+        this.moonLight.shadow.mapSize.height = 1024;
     }
 
     buildMaze() {
@@ -691,7 +694,8 @@ class Game {
         const wallMaterial = new THREE.MeshPhongMaterial({ 
             map: this.textures.brick,
             color: 0xa0b0a0, // Subtle green-grey tint (mossy/forest look)
-            shininess: 5
+            shininess: 5,
+            shadowSide: THREE.DoubleSide
         });
 
         const floorGeometry = new THREE.PlaneGeometry(this.mazeSize, this.mazeSize);
@@ -709,17 +713,68 @@ class Game {
         let torchCount = 0;
         const maxTorches = 20;
         
+        // Count walls and prepare instanced mesh
+        let wallCount = 0;
+        let decorBrickCount = 0;
         for (let y = 0; y < this.mazeSize; y++) {
             for (let x = 0; x < this.mazeSize; x++) {
                 if (this.grid[y][x] === 1) {
-                    this.createUnevenWall(x, y, wallMaterial);
+                    wallCount++;
+                    if (Math.random() > 0.3) {
+                        decorBrickCount += Math.floor(Math.random() * 4) + 1;
+                    }
                 } else {
-                    // Collect empty spaces for powerups and keys
                     const isStart = (x === 0 && y === 1);
                     const isEnd = (x === this.mazeSize - 1 && y === this.mazeSize - 2);
-                    
                     if (!isStart && !isEnd) {
                         emptySpaces.push({x, y});
+                    }
+                }
+            }
+        }
+
+        const wallGeo = new THREE.BoxGeometry(1, 1, 1);
+        this.wallInstancedMesh = new THREE.InstancedMesh(wallGeo, wallMaterial, wallCount);
+        this.wallInstancedMesh.castShadow = true;
+        this.wallInstancedMesh.receiveShadow = true;
+        this.wallInstancedMesh.frustumCulled = true;
+        this.scene.add(this.wallInstancedMesh);
+
+        const brickGeo = new THREE.BoxGeometry(0.4, 1, 0.25); // Height will be scaled
+        this.brickInstancedMesh = new THREE.InstancedMesh(brickGeo, wallMaterial, decorBrickCount);
+        this.brickInstancedMesh.castShadow = true;
+        this.brickInstancedMesh.receiveShadow = true;
+        this.brickInstancedMesh.frustumCulled = true;
+        this.scene.add(this.brickInstancedMesh);
+
+        let wallIdx = 0;
+        let brickIdx = 0;
+        const dummy = new THREE.Object3D();
+
+        for (let y = 0; y < this.mazeSize; y++) {
+            for (let x = 0; x < this.mazeSize; x++) {
+                if (this.grid[y][x] === 1) {
+                    // Wall
+                    const height = 1.1 + 0.5 + Math.random() * 0.5;
+                    dummy.position.set(x, (height / 2) - 0.5, y);
+                    dummy.scale.set(1, height, 1);
+                    dummy.updateMatrix();
+                    this.wallInstancedMesh.setMatrixAt(wallIdx++, dummy.matrix);
+
+                    // Decor bricks
+                    if (Math.random() > 0.3) {
+                        const numBricks = Math.floor(Math.random() * 4) + 1;
+                        for (let i = 0; i < numBricks; i++) {
+                            const brickHeight = 0.1 + Math.random() * 0.25;
+                            dummy.position.set(
+                                x + (Math.random() - 0.5) * 0.5,
+                                height - 0.5 + brickHeight / 2,
+                                y + (Math.random() - 0.5) * 0.5
+                            );
+                            dummy.scale.set(1, brickHeight, 1);
+                            dummy.updateMatrix();
+                            this.brickInstancedMesh.setMatrixAt(brickIdx++, dummy.matrix);
+                        }
                     }
                 }
             }
@@ -888,43 +943,6 @@ class Game {
         }
     }
 
-    createUnevenWall(x, y, material) {
-        // ... (existing wall code)
-        // Walls base lowered to 1.1 (+0.5 sink)
-        // Total physical height needed: 1.1 base + 0.5 sink = ~1.6
-        // Increased random base variation from 0.2 to 0.5 for more uneven look
-        const height = 1.1 + 0.5 + Math.random() * 0.5;
-        const geo = new THREE.BoxGeometry(1, height, 1);
-        const wall = new THREE.Mesh(geo, material);
-        // Sink the wall by 0.5 so its bottom is definitely below y=0 (floor is at y=0)
-        wall.position.set(x, (height / 2) - 0.5, y);
-        wall.castShadow = true;
-        wall.receiveShadow = true;
-        // Prevent light bleeding from behind the wall geometry
-        if (material) {
-            material.shadowSide = THREE.DoubleSide;
-        }
-        this.scene.add(wall);
-
-        if (Math.random() > 0.3) {
-            // Increased the number of random top bricks
-            const numBricks = Math.floor(Math.random() * 4) + 1;
-            for (let i = 0; i < numBricks; i++) {
-                // Increased brick height variance significantly to make the top jagged
-                const brickHeight = 0.1 + Math.random() * 0.25;
-                const brickGeo = new THREE.BoxGeometry(0.4, brickHeight, 0.25);
-                const brick = new THREE.Mesh(brickGeo, material);
-                brick.position.set(
-                    x + (Math.random() - 0.5) * 0.5,
-                    height - 0.5 + brickHeight / 2,
-                    y + (Math.random() - 0.5) * 0.5
-                );
-                brick.castShadow = true;
-                brick.receiveShadow = true;
-                this.scene.add(brick);
-            }
-        }
-    }
 
     createCoinTexture(text, colorStr) {
         const canvas = document.createElement('canvas');
@@ -1252,14 +1270,15 @@ class Game {
         this.prevTime = time;
         this.fpsFrameCount++;
 
-        if (this.textures.clouds) {
-            // Speed up clouds slightly to make the dynamic sky more noticeable
-            this.textures.clouds.offset.x += 0.0001;
-            this.textures.clouds.offset.y += 0.00005;
-        }
-        if (this.cloudSphere) {
-            this.cloudSphere.rotation.y += 0.0002; // physical rotation of the cloud dome
-        }
+        // Cloud animation disabled for performance
+        // if (this.textures.clouds) {
+        //     // Speed up clouds slightly to make the dynamic sky more noticeable
+        //     this.textures.clouds.offset.x += 0.0001;
+        //     this.textures.clouds.offset.y += 0.00005;
+        // }
+        // if (this.cloudSphere) {
+        //     this.cloudSphere.rotation.y += 0.0002; // physical rotation of the cloud dome
+        // }
 
         // --- TORCH FLICKER LOGIC ---
         const timeNow = time * 0.005;
@@ -1965,8 +1984,22 @@ class Game {
         scheduleHowl();
     }
 
+    updateMonsterPerformance() {
+        const distance = this.camera.position.distanceTo(this.monster.position);
+        if (distance > 15) {
+            this.monsterLight.castShadow = false;
+            this.monsterLight.intensity = 0.5;
+        } else {
+            this.monsterLight.castShadow = true;
+            this.monsterLight.intensity = 2;
+        }
+    }
+
     updateMonster(delta) {
         if (!this.monsterSpawned || !this.monster || this.isGameOver) return;
+        
+        // Optimized shadows based on distance
+        this.updateMonsterPerformance();
         
         const timeOffset = Date.now() / 200;
         this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1;
@@ -2032,6 +2065,7 @@ class Game {
             }
         }
 
+        // Check for game over collision
         const distToPlayer = this.camera.position.distanceTo(this.monster.position);
         if (distToPlayer < 0.6) {
             this.handleGameOver();
