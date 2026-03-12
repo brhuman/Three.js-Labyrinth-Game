@@ -1068,7 +1068,11 @@ class Game {
                 break;
             case 'Escape':
                 if (this.gameStarted && !this.isGameOver) {
-                    this.toggleMenu();
+                    if (this.isPaused) {
+                        this.controls.lock();
+                    } else {
+                        this.controls.unlock();
+                    }
                 }
                 break;
         }
