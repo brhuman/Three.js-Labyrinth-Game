@@ -1243,11 +1243,13 @@ class Game {
             this.spawnBattery(pos.x, pos.y);
         }
 
-        // 3. Spawn Crouch Beams (disjoint from batteries)
+        // 3. Spawn Crouch Beams (disjoint from batteries) - avoid spawning near start (7 cells)
         const numBeams = Math.floor(emptySpaces.length * 0.05);
+        const startX = 0, startZ = 1;
         for (let i = 0; i < numBeams && spaceIdx < emptySpaces.length; i++) {
             const s = emptySpaces[spaceIdx++];
-            if (s.x > 2 || s.y > 2) { // Prevent spawning too close to start
+            const dist = Math.sqrt(Math.pow(s.x - startX, 2) + Math.pow(s.y - startZ, 2));
+            if (dist >= 7) { 
                 this.spawnCrouchBeam(s.x, s.y);
             }
         }

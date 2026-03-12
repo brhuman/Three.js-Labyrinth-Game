@@ -11,12 +11,12 @@
     <!-- Preloader -->
     <div id="preloader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000000; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; overflow: hidden;">
       <!-- Blood drops falling from top -->
-      <div class="blood-drop" style="position: absolute; left: 15%; top: -20px; width: 6px; height: 12px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3s infinite;"></div>
-      <div class="blood-drop" style="position: absolute; left: 35%; top: -20px; width: 8px; height: 16px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.5s infinite 0.5s;"></div>
-      <div class="blood-drop" style="position: absolute; left: 55%; top: -20px; width: 10px; height: 20px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 4s infinite 1s;"></div>
-      <div class="blood-drop" style="position: absolute; left: 75%; top: -20px; width: 5px; height: 10px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 2.5s infinite 1.5s;"></div>
-      <div class="blood-drop" style="position: absolute; left: 25%; top: -20px; width: 7px; height: 14px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.2s infinite 2s;"></div>
-      <div class="blood-drop" style="position: absolute; left: 85%; top: -20px; width: 9px; height: 18px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.8s infinite 2.5s;"></div>
+      <div class="blood-drop" style="position: absolute; left: 15%; top: -20px; width: 6px; height: 12px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3s linear infinite;"></div>
+      <div class="blood-drop" style="position: absolute; left: 35%; top: -20px; width: 8px; height: 16px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.5s linear infinite 0.5s;"></div>
+      <div class="blood-drop" style="position: absolute; left: 55%; top: -20px; width: 10px; height: 20px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 4s linear infinite 1s;"></div>
+      <div class="blood-drop" style="position: absolute; left: 75%; top: -20px; width: 5px; height: 10px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 2.5s linear infinite 1.5s;"></div>
+      <div class="blood-drop" style="position: absolute; left: 25%; top: -20px; width: 7px; height: 14px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.2s linear infinite 2s;"></div>
+      <div class="blood-drop" style="position: absolute; left: 85%; top: -20px; width: 9px; height: 18px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.8s linear infinite 2.5s;"></div>
       
       <div style="margin-top: 50px; color: #8b0000; font-family: monospace; font-size: 14px; letter-spacing: 2px; z-index: 10;">LOADING...</div>
     </div>
@@ -26,7 +26,7 @@
         0% { transform: translateY(0); opacity: 0; }
         10% { opacity: 1; }
         90% { opacity: 1; }
-        100% { transform: translateY(100vh); opacity: 0; }
+        100% { transform: translateY(110vh); opacity: 0; }
       }
       @keyframes fadeOut {
         0% { opacity: 1; }
