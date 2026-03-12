@@ -96,7 +96,7 @@ class Game {
         // FPS Counter
         this.fpsFrameCount = 0;
         this.fpsPrevTime = performance.now();
-        this.fpsElement = document.getElementById('fps');
+        // this.fpsElement = document.getElementById('fps'); // Removed FPS counter
 
         // Monster pathfinding throttle
         this.monsterPath = [];
@@ -464,7 +464,7 @@ class Game {
             this.isFullscreenToggling = false;
             
             // If we just entered fullscreen and game is active, restore pointer lock
-            if (document.fullscreenElement && this.gameStarted && !this.isGameOver && this.isPaused) {
+            if (document.fullscreenElement && this.gameStarted && !this.isGameOver) {
                 setTimeout(() => {
                     if (this.controls && !this.controls.isLocked) {
                         this.controls.lock();
@@ -480,7 +480,7 @@ class Game {
             this.isFullscreenToggling = false;
             
             // If we just entered fullscreen and game is active, restore pointer lock
-            if (document.webkitFullscreenElement && this.gameStarted && !this.isGameOver && this.isPaused) {
+            if (document.webkitFullscreenElement && this.gameStarted && !this.isGameOver) {
                 setTimeout(() => {
                     if (this.controls && !this.controls.isLocked) {
                         this.controls.lock();
@@ -525,12 +525,16 @@ class Game {
             document.getElementById('hud').style.display = 'flex';
             document.getElementById('crosshair').style.display = 'block';
             
+            // Hide control buttons when playing
+            document.getElementById('mute-btn').style.display = 'none';
+            document.getElementById('fullscreen-btn').style.display = 'none';
+            
             // Pre-warm audio context to prevent first-frame lag
             if (this.monsterSound && this.monsterSound.context.state === 'suspended') {
                 this.monsterSound.context.resume();
             }
             
-            // Show appropriate hint after 10 seconds based on level
+            // Show appropriate hint after 1 second based on level
             if (this.level === 1 && !this.fullscreenHintShown) {
                 setTimeout(() => {
                     // Only show if game is still active and hint hasn't been shown yet
@@ -555,7 +559,7 @@ class Game {
                             }
                         }, 5000);
                     }
-                }, 10000); // Wait 10 seconds before showing hint
+                }, 1000); // Wait 1 second before showing hint
             } else if (this.level === 4 && !this.flashlightHintShown) {
                 setTimeout(() => {
                     // Only show if game is still active and hint hasn't been shown yet
@@ -604,11 +608,26 @@ class Game {
                 this.lastUnlockTime = Date.now();
                 document.getElementById('menu').style.display = 'block';
                 
+                // Show control buttons when paused
+                document.getElementById('mute-btn').style.display = 'block';
+                document.getElementById('fullscreen-btn').style.display = 'block';
+                
                 // Play menu music
                 if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
                     this.playAudioSafely(this.menuBackgroundMusic, 'menu');
                 }
+            } else if (!this.isGameOver && this.isFullscreenToggling) {
+                // We're toggling fullscreen, so hide HUD but don't show menu
+                this.isPaused = true;
+                this.pauseTime = Date.now();
+                this.lastUnlockTime = Date.now();
+                
+                // Show control buttons when toggling fullscreen
+                document.getElementById('mute-btn').style.display = 'block';
+                document.getElementById('fullscreen-btn').style.display = 'block';
             }
+            
+            // Always hide HUD and crosshair when unlocking
             document.getElementById('hud').style.display = 'none';
             document.getElementById('crosshair').style.display = 'none';
         });
@@ -656,6 +675,10 @@ class Game {
 
         this.buildMaze();
         this.animate();
+        
+        // Show control buttons in menu initially
+        document.getElementById('mute-btn').style.display = 'block';
+        document.getElementById('fullscreen-btn').style.display = 'block';
         
         // Handle preloader scream audio with multiple attempts
         const preloaderScream = document.getElementById('preloader-scream');
@@ -1312,29 +1335,34 @@ class Game {
             
             // Open door frame
             const frameGeo = new THREE.BoxGeometry(0.1, 1.1, 0.2);
+            
             const leftFrame = new THREE.Mesh(frameGeo, doorMaterial);
+            const rightFrame = new THREE.Mesh(frameGeo, doorMaterial);
+            
             if (isRotated) {
-                leftFrame.position.set(x - 0.4, 0.55, z);
-                leftFrame.rotation.y = Math.PI / 2;
-            } else {
+                // For right wall exit: frames should be positioned along Z axis but rotated
                 leftFrame.position.set(x, 0.55, z - 0.4);
+                rightFrame.position.set(x, 0.55, z + 0.4);
+                leftFrame.rotation.y = Math.PI / 2;
+                rightFrame.rotation.y = Math.PI / 2;
+            } else {
+                // For bottom wall exit: frames positioned along X axis
+                leftFrame.position.set(x - 0.4, 0.55, z);
+                rightFrame.position.set(x + 0.4, 0.55, z);
             }
+            
             leftFrame.castShadow = true;
             leftFrame.receiveShadow = true;
             this.scene.add(leftFrame);
 
-            const rightFrame = new THREE.Mesh(frameGeo, doorMaterial);
-            if (isRotated) {
-                rightFrame.position.set(x + 0.4, 0.55, z);
-                rightFrame.rotation.y = Math.PI / 2;
-            } else {
-                rightFrame.position.set(x, 0.55, z + 0.4);
-            }
             rightFrame.castShadow = true;
             rightFrame.receiveShadow = true;
             this.scene.add(rightFrame);
 
-            const topGeo = new THREE.BoxGeometry(0.1, 0.2, 1);
+            // Top frame with proper dimensions based on orientation
+            const topGeo = isRotated ? 
+                new THREE.BoxGeometry(1, 0.2, 0.1) : // Rotated: longer along X
+                new THREE.BoxGeometry(0.1, 0.2, 1);  // Standard: longer along Z
             const topFrame = new THREE.Mesh(topGeo, doorMaterial);
             topFrame.position.set(x, 1.2, z); // 1.1 + 0.1
             topFrame.castShadow = true;
@@ -1971,35 +1999,10 @@ createObstacle(x, y, material, type) {
                 this.fpsFrameCount = 0;
                 this.fpsPrevTime = time;
                 
-                // Update FPS display
-                if (this.fpsElement) {
-                    this.fpsElement.textContent = `FPS: ${fps}`;
-                }
+                // FPS display removed
             }
 
-        // Adaptive quality system for large maps
-        if (this.mazeSize > 25) { // Reduced threshold from 30 to account for smaller base size
-            // Dynamic quality adjustment based on FPS (fps variable already available from counter above)
-            if (this.fpsElement) {
-                const currentFPS = parseInt(this.fpsElement.textContent.replace('FPS: ', ''));
-                
-                if (currentFPS < 45) {
-                    // Low FPS - reduce quality
-                    this.renderer.shadowMap.enabled = false;
-                    this.moonLight.intensity = 0.6;
-                } else if (currentFPS < 55) {
-                    // Medium FPS - medium quality
-                    this.renderer.shadowMap.enabled = true;
-                    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-                    this.moonLight.intensity = 0.7;
-                } else {
-                    // Good FPS - high quality
-                    this.renderer.shadowMap.enabled = true;
-                    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-                    this.moonLight.intensity = 0.84;
-                }
-            }
-        }
+        // Adaptive quality system removed (FPS-based)
 
         // Cloud animation disabled for performance
         // if (this.textures.clouds) {
@@ -2085,14 +2088,7 @@ createObstacle(x, y, material, type) {
 
 
 
-        // FPS Calculation
-        this.fpsFrameCount++;
-        if (time >= this.fpsPrevTime + 1000) {
-            const fps = Math.round((this.fpsFrameCount * 1000) / (time - this.fpsPrevTime));
-            this.fpsElement.textContent = fps;
-            this.fpsFrameCount = 0;
-            this.fpsPrevTime = time;
-        }
+            // FPS calculation removed
 
         // Move the moon slowly
         if (this.moonLight) {
@@ -3125,6 +3121,10 @@ createObstacle(x, y, material, type) {
         this.isGameOver = true;
         this.controls.unlock();
         document.getElementById('game-over').style.display = 'block';
+        
+        // Show control buttons when game is over
+        document.getElementById('mute-btn').style.display = 'block';
+        document.getElementById('fullscreen-btn').style.display = 'block';
         
         // Calculate final statistics
         const finalLevel = this.level;

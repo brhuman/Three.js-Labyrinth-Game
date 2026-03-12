@@ -115,10 +115,10 @@
         <button id="restart-btn">TRY AGAIN</button>
       </div>
 
-      <div id="mute-btn" class="glass-panel">
+      <div id="mute-btn" class="glass-panel" style="display: none;">
         <span id="mute-icon">🔊</span>
       </div>
-      <div id="fullscreen-btn" class="glass-panel" style="left: auto; right: 60px; bottom: 16px; position: fixed; cursor: pointer; font-size: 1.2rem; padding: 6px 10px;" title="Fullscreen (L)">
+      <div id="fullscreen-btn" class="glass-panel" style="left: auto; right: 60px; bottom: 16px; position: fixed; cursor: pointer; font-size: 1.2rem; padding: 6px 10px; display: none;" title="Fullscreen (L)">
         <span id="fullscreen-icon">⛶</span>
       </div>
 
@@ -141,9 +141,6 @@
 
           <div class="glass-panel">
             <div class="stats">Time: <span id="timer">00:00</span></div>
-          </div>
-          <div class="glass-panel" style="border-color: #00ffff;">
-            <div class="stats" style="color: #00ffff;">FPS: <span id="fps">60</span></div>
           </div>
           <div id="bonus-speed-indicator" class="glass-panel" style="display: none; border-color: #00ffff;">
             <div class="stats" style="color: #00ffff;">Speed Boost: <span id="bonus-speed-time">15s</span></div>
