@@ -9,7 +9,7 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
-        this.mazeSize = 33; // Increased by ~30% for larger levels
+        this.mazeSize = 23; // Reduced by 10% more from 26
         this.grid = null;
         this.walls = [];
         this.goal = null;
@@ -86,7 +86,7 @@ class Game {
         // Monster pathfinding throttle
         this.monsterPath = [];
         this.lastPathUpdateTime = 0;
-        this.pathUpdateIntervalMs = 500; // Recalculate path every 500ms max
+        this.pathUpdateIntervalMs = 800; // Increased from 500ms for better performance on large maps
 
         this.torchLights = [];
         
@@ -112,10 +112,28 @@ class Game {
 
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limit pixel ratio for performance
         this.renderer.setClearColor(0x020502); // Match forest fog color
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap; // Less expensive than PCFSoftShadowMap
+        this.renderer.powerPreference = "high-performance";
+        this.renderer.antialias = window.devicePixelRatio <= 1; // Disable AA on high DPI displays
+        
+        // Set FPS limit to 144
+        this.targetFPS = 144;
+        this.frameInterval = 1000 / this.targetFPS;
+        this.then = performance.now();
+        
+        // Try to enable high refresh rate
+        this.enableHighFPS = true;
+        this.displayRefreshRate = screen.refreshRate || 60; // Get actual display refresh rate
+        
+        if (this.enableHighFPS) {
+            // Try to unlock frame rate for high refresh displays
+            this.renderer.setAnimationLoop(() => this.animate());
+            console.log(`Display refresh rate: ${this.displayRefreshRate}Hz, Target FPS: ${this.targetFPS}`);
+        }
+        
         document.body.appendChild(this.renderer.domElement);
 
         // Preload essential textures with tracking
@@ -132,15 +150,17 @@ class Game {
         const hemiLight = new THREE.HemisphereLight(0xa0c0ff, 0x101308, 0.10);
         this.scene.add(hemiLight);
 
-        // Silver-green moon light — усиливаем свет и тени от луны примерно на 20%
+        // Silver-green moon light — оптимизированные тени для больших карт
         this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.84);
         this.moonLight.castShadow = true;
-        // Max out shadow map for crispness
-        this.moonLight.shadow.mapSize.width = 1024;
-        this.moonLight.shadow.mapSize.height = 1024;
-        this.moonLight.shadow.bias = -0.0005; // Slightly stronger bias to prevent acne but keep contact
-        this.moonLight.shadow.normalBias = 0.01; // Reduced to prevent light pushing through thin walls
+        // Optimized shadow map for performance
+        this.moonLight.shadow.mapSize.width = 512; // Reduced from 1024
+        this.moonLight.shadow.mapSize.height = 512;
+        this.moonLight.shadow.bias = -0.0005;
+        this.moonLight.shadow.normalBias = 0.01;
         this.moonLight.shadow.radius = 1;
+        this.moonLight.shadow.camera.near = 0.1;
+        this.moonLight.shadow.camera.far = 50; // Reduced from 100
         this.updateSunFrustum();
         this.scene.add(this.moonLight);
 
@@ -670,17 +690,17 @@ class Game {
     }
 
     updateSunFrustum() {
-        const d = this.mazeSize;
+        const d = Math.min(this.mazeSize, 30); // Limit shadow frustum size for performance
         this.moonLight.shadow.camera.left = -d;
         this.moonLight.shadow.camera.right = d;
         this.moonLight.shadow.camera.top = d;
         this.moonLight.shadow.camera.bottom = -d;
         this.moonLight.shadow.camera.near = 0.1;
-        this.moonLight.shadow.camera.far = 100;
+        this.moonLight.shadow.camera.far = Math.min(50, d * 1.5); // Dynamic far plane
         this.moonLight.shadow.camera.updateProjectionMatrix();
-        // Reduce shadow map resolution
-        this.moonLight.shadow.mapSize.width = 1024;
-        this.moonLight.shadow.mapSize.height = 1024;
+        // Optimized shadow map resolution
+        this.moonLight.shadow.mapSize.width = 512;
+        this.moonLight.shadow.mapSize.height = 512;
     }
 
     buildMaze() {
@@ -711,17 +731,21 @@ class Game {
 
         const emptySpaces = [];
         let torchCount = 0;
-        const maxTorches = 20;
+        // Dynamic torch limit based on maze size for performance
+        const maxTorches = Math.min(20, Math.floor(this.mazeSize * 0.6));
         
         // Count walls and prepare instanced mesh
         let wallCount = 0;
         let decorBrickCount = 0;
+        // Reduce decoration density on large maps
+        const decorChance = this.mazeSize > 30 ? 0.7 : 0.3;
+        
         for (let y = 0; y < this.mazeSize; y++) {
             for (let x = 0; x < this.mazeSize; x++) {
                 if (this.grid[y][x] === 1) {
                     wallCount++;
-                    if (Math.random() > 0.3) {
-                        decorBrickCount += Math.floor(Math.random() * 4) + 1;
+                    if (Math.random() > decorChance) {
+                        decorBrickCount += Math.floor(Math.random() * 2) + 1; // Max 2 bricks instead of 4
                     }
                 } else {
                     const isStart = (x === 0 && y === 1);
@@ -1004,8 +1028,7 @@ class Game {
         });
         
         const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = Math.PI / 2; // Stand the coin up
-        mesh.rotation.y = Math.PI / 2;
+        mesh.rotation.x = Math.PI / 2; // Lay the coin flat (horizontal)
         mesh.position.set(x, 0.5, z);
 
         mesh.userData = { type: type, isCoin: true };
@@ -1029,14 +1052,65 @@ class Game {
         cap.position.y = 0.15;
         group.add(cap);
 
-        group.position.set(x, 0.4, z);
+        // Add percentage text above battery
+        const percentTex = this.createCoinTexture('+25%', '#00ff00');
+        const textGeo = new THREE.PlaneGeometry(0.3, 0.1);
+        const textMat = new THREE.MeshBasicMaterial({ 
+            map: percentTex, 
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+        const textMesh = new THREE.Mesh(textGeo, textMat);
+        textMesh.position.y = 0.35;
+        group.add(textMesh);
 
+        group.position.set(x, 0.4, z);
 
         this.scene.add(group);
         this.batteries.push(group);
     }
 
-    // --- SPAWN METHODS ---
+    createCoinTexture(text, colorStr) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.fillStyle = colorStr;
+        ctx.beginPath();
+        ctx.arc(64, 64, 60, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 45px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 64, 64);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        return texture;
+    }
+
+createObstacle(x, y, material, type) {
+        let geo, py;
+        if (type === 'jump') {
+            geo = new THREE.BoxGeometry(1, 0.4, 1);
+            py = -0.3; // Low wall
+        } else {
+            geo = new THREE.BoxGeometry(1, 1.5, 1);
+            py = 1.2; // High beam
+        }
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.position.set(x, py, y);
+        mesh.receiveShadow = true;
+        mesh.castShadow = true;
+        this.scene.add(mesh);
+        this.walls.push(mesh);
+    }
 
     spawnKey(x, z) {
         const group = new THREE.Group();
@@ -1264,11 +1338,58 @@ class Game {
     }
 
     animate() {
-        requestAnimationFrame(() => this.animate());
-        const time = performance.now();
-        const delta = Math.min((time - this.prevTime) / 1000, 0.1);
-        this.prevTime = time;
-        this.fpsFrameCount++;
+        // Don't call requestAnimationFrame manually when using setAnimationLoop
+        if (!this.enableHighFPS) {
+            requestAnimationFrame(() => this.animate());
+        }
+        
+        // FPS limiting
+        const now = performance.now();
+        const elapsed = now - this.then;
+        
+        if (elapsed > this.frameInterval) {
+            this.then = now - (elapsed % this.frameInterval);
+            
+            const time = now;
+            const delta = Math.min((time - this.prevTime) / 1000, 0.1);
+            this.prevTime = time;
+            this.fpsFrameCount++;
+
+            // Update FPS counter every second for all map sizes
+            if (time - this.fpsPrevTime >= 1000) {
+                const fps = this.fpsFrameCount;
+                this.fpsFrameCount = 0;
+                this.fpsPrevTime = time;
+                
+                // Update FPS display
+                if (this.fpsElement) {
+                    this.fpsElement.textContent = `FPS: ${fps}`;
+                }
+            }
+
+        // Adaptive quality system for large maps
+        if (this.mazeSize > 30) {
+            // Dynamic quality adjustment based on FPS (fps variable already available from counter above)
+            if (this.fpsElement) {
+                const currentFPS = parseInt(this.fpsElement.textContent.replace('FPS: ', ''));
+                
+                if (currentFPS < 45) {
+                    // Low FPS - reduce quality
+                    this.renderer.shadowMap.enabled = false;
+                    this.moonLight.intensity = 0.6;
+                } else if (currentFPS < 55) {
+                    // Medium FPS - medium quality
+                    this.renderer.shadowMap.enabled = true;
+                    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+                    this.moonLight.intensity = 0.7;
+                } else {
+                    // Good FPS - high quality
+                    this.renderer.shadowMap.enabled = true;
+                    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+                    this.moonLight.intensity = 0.84;
+                }
+            }
+        }
 
         // Cloud animation disabled for performance
         // if (this.textures.clouds) {
@@ -1280,24 +1401,19 @@ class Game {
         //     this.cloudSphere.rotation.y += 0.0002; // physical rotation of the cloud dome
         // }
 
-        // --- TORCH FLICKER LOGIC ---
-        const timeNow = time * 0.005;
+        // --- SIMPLIFIED TORCH FLICKER LOGIC ---
+        const timeNow = time * 0.003; // Slower, simpler animation
 
-        // Flicker environment torches
+        // Simplified flicker for environment torches
         this.torchLights.forEach(t => {
             if (t.light) {
-                t.light.intensity = t.baseIntensity + Math.sin(timeNow * 0.8 + t.gridX) * 0.1 + Math.random() * 0.2;
-                // Also slightly pulse the flame meshes
-                if (t.flameMeshes) {
-                    t.flameMeshes.forEach((m, i) => {
-                        const s = 1.0 + Math.sin(timeNow * 1.5 + i) * 0.05 + Math.random() * 0.02;
-                        m.scale.set(s, s, s);
-                    });
-                }
+                // Simple sine wave flicker without random noise
+                t.light.intensity = t.baseIntensity + Math.sin(timeNow + t.gridX) * 0.05;
+                // Remove complex flame mesh scaling for performance
             }
         });
 
-        // No wiggle for steady flashlight
+        // Simplified steady flashlight
         if (this.flashlight) {
             this.flashlight.intensity = 2.5; 
         }
@@ -1556,6 +1672,7 @@ class Game {
         }
 
         this.renderer.render(this.scene, this.camera);
+        } // Close FPS limiting block
     }
 
     spawnMonster() {
@@ -1986,12 +2103,28 @@ class Game {
 
     updateMonsterPerformance() {
         const distance = this.camera.position.distanceTo(this.monster.position);
-        if (distance > 15) {
+        
+        // Aggressive optimization based on distance
+        if (distance > 20) {
+            // Far away - minimal rendering
+            this.monsterLight.castShadow = false;
+            this.monsterLight.intensity = 0.2;
+            this.monster.visible = false; // Hide completely when far
+        } else if (distance > 15) {
+            // Medium distance - reduced quality
             this.monsterLight.castShadow = false;
             this.monsterLight.intensity = 0.5;
+            this.monster.visible = true;
+        } else if (distance > 8) {
+            // Close - reduced shadows
+            this.monsterLight.castShadow = false;
+            this.monsterLight.intensity = 1.5;
+            this.monster.visible = true;
         } else {
+            // Very close - full quality
             this.monsterLight.castShadow = true;
             this.monsterLight.intensity = 2;
+            this.monster.visible = true;
         }
     }
 
@@ -2004,9 +2137,10 @@ class Game {
         const timeOffset = Date.now() / 200;
         this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1;
 
-        // Pulsating effect (slight scale variation)
-        const pulseScale = 1.0 + Math.sin(Date.now() / 500) * 0.05;
-        this.monster.scale.set(pulseScale, pulseScale, pulseScale);
+        // Pulsating effect (slight scale variation) - DISABLED
+        // const pulseScale = 1.0 + Math.sin(Date.now() / 500) * 0.05;
+        // this.monster.scale.set(pulseScale, pulseScale, pulseScale);
+        this.monster.scale.set(1.0, 1.0, 1.0);
 
         const currentCellX = Math.floor(this.monster.position.x + 0.5);
         const currentCellZ = Math.floor(this.monster.position.z + 0.5);
@@ -2082,7 +2216,7 @@ class Game {
 
         // Reset Game state without instantly restarting
         this.level = 1; 
-        this.mazeSize = 25; 
+        this.mazeSize = 18; // Reduced by 10% more from 20 
         this.playerKeys = 0;
         this.slowPowerupRemaining = 0;
         this.monsterSpeed = this.baseMonsterSpeed;
@@ -2231,7 +2365,7 @@ class Game {
 
     nextLevel() {
         this.level++;
-        this.mazeSize += 2;
+        this.mazeSize += 1.4; // Reduced increment (10% smaller progression)
         this.startTime = Date.now();
         
         // Don't null out this.monster — it's permanently in scene, just hide it
