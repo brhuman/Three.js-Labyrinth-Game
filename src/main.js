@@ -9,7 +9,7 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
-        this.mazeSize = 25; // Increased for Phase 9
+        this.mazeSize = 33; // Increased by ~30% for larger levels
         this.grid = null;
         this.walls = [];
         this.goal = null;
