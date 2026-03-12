@@ -87,6 +87,8 @@ class Game {
         this.monsterPath = [];
         this.lastPathUpdateTime = 0;
         this.pathUpdateIntervalMs = 800; // Increased from 500ms for better performance on large maps
+        this.currentPathIndex = 0;
+        this.monsterTargetPosition = null;
 
         this.torchLights = [];
         
@@ -105,6 +107,14 @@ class Game {
         this.pauseTime = null;
         this.lastUnlockTime = 0;
         this.totalPausedDuration = 0;
+        
+        // Flashlight optimization
+        this.flashlightDebounceTime = 0;
+        this.flashlightDebounceDelay = 100; // ms
+        
+        // Global audio optimization
+        this.audioDebounceTime = {};
+        this.audioDebounceDelay = 50; // ms for general audio
 
         this.init();
 
@@ -366,10 +376,15 @@ class Game {
                     this.monster.position.set(0, 0.5, 1);
                     this.monsterVolume = 0;
                     this.monsterVolumeTarget = 0;
+                    // Reset pathfinding state
+                    this.monsterPath = [];
+                    this.currentPathIndex = 0;
+                    this.monsterTargetPosition = null;
+                    this.lastPathUpdateTime = 0;
                 }
                 
                 if (this.monsterSound && this.monsterSound.isPlaying) {
-                    this.monsterSound.stop();
+                    this.stopAudioSafely(this.monsterSound);
                 }
 
                 // Reset fog if FoW is disabled
@@ -384,7 +399,7 @@ class Game {
             
             // Stop menu music when starting game
             if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
-                this.menuBackgroundMusic.pause();
+                this.stopAudioSafely(this.menuBackgroundMusic);
             }
             
             this.controls.lock();
@@ -479,7 +494,7 @@ class Game {
 
             // Stop menu music
             if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
-                this.menuBackgroundMusic.pause();
+                this.stopAudioSafely(this.menuBackgroundMusic);
             }
         });
 
@@ -493,7 +508,7 @@ class Game {
                 
                 // Play menu music
                 if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
-                    this.menuBackgroundMusic.play();
+                    this.playAudioSafely(this.menuBackgroundMusic, 'menu');
                 }
             }
             document.getElementById('hud').style.display = 'none';
@@ -552,9 +567,11 @@ class Game {
             
             // Try to play immediately
             const tryPlay = () => {
-                preloaderScream.play().catch(e => {
-                    console.warn('Preloader scream failed to play:', e);
-                });
+                setTimeout(() => {
+                    preloaderScream.play().catch(e => {
+                        console.warn('Preloader scream failed to play:', e);
+                    });
+                }, 0);
             };
             
             tryPlay();
@@ -680,7 +697,7 @@ class Game {
             this.torchLights.forEach(torch => {
                 try {
                     if (torch.fireSound && torch.fireSound.isPlaying) {
-                        torch.fireSound.stop();
+                        this.stopAudioSafely(torch.fireSound);
                     }
                 } catch (error) {
                     console.warn('Error stopping torch sound:', error);
@@ -1231,24 +1248,42 @@ createObstacle(x, y, material, type) {
                 this.toggleMute();
                 break;
             case 'KeyF':
+                // Debounce to prevent multiple rapid toggles
+                const now = performance.now();
+                if (now - this.flashlightDebounceTime < this.flashlightDebounceDelay) {
+                    break;
+                }
+                this.flashlightDebounceTime = now;
+                
                 if (this.flashlight) {
                     const willTurnOn = !this.flashlight.visible;
+                    
+                    // Batch light visibility changes for performance
                     this.flashlight.visible = willTurnOn;
                     if (this.flashlightHalo) this.flashlightHalo.visible = willTurnOn;
 
+                    // Optimize audio operations - use async to prevent blocking
                     if (!this.isMuted) {
-                        if (willTurnOn && this.flashlightOnSound && this.flashlightOnSound.isPlaying) {
+                        // Stop any playing sounds first
+                        if (willTurnOn && this.flashlightOnSound?.isPlaying) {
                             this.flashlightOnSound.stop();
                         }
-                        if (!willTurnOn && this.flashlightOffSound && this.flashlightOffSound.isPlaying) {
+                        if (!willTurnOn && this.flashlightOffSound?.isPlaying) {
                             this.flashlightOffSound.stop();
                         }
 
-                        if (willTurnOn && this.flashlightOnSound) {
-                            this.flashlightOnSound.play();
-                        } else if (!willTurnOn && this.flashlightOffSound) {
-                            this.flashlightOffSound.play();
-                        }
+                        // Play sound with minimal delay
+                        setTimeout(() => {
+                            try {
+                                if (willTurnOn && this.flashlightOnSound) {
+                                    this.flashlightOnSound.play();
+                                } else if (!willTurnOn && this.flashlightOffSound) {
+                                    this.flashlightOffSound.play();
+                                }
+                            } catch (e) {
+                                console.warn('Flashlight sound failed:', e);
+                            }
+                        }, 0);
                     }
                 }
                 break;
@@ -1700,13 +1735,19 @@ createObstacle(x, y, material, type) {
         this.monster.position.set(0, 0.5, 1);
         this.monster.visible = true;
         
+        // Reset pathfinding state when spawning
+        this.monsterPath = [];
+        this.currentPathIndex = 0;
+        this.monsterTargetPosition = null;
+        this.lastPathUpdateTime = 0;
+        
         // Start sound with smooth fade-in
         if (this.monsterSound) {
             if (this.monsterSound.context.state === 'suspended') {
                 this.monsterSound.context.resume();
             }
             if (!this.monsterSound.isPlaying) {
-                this.monsterSound.play();
+                this.playAudioSafely(this.monsterSound, 'monster');
             }
             // Start from silence and fade up to base volume
             this.monsterVolume = 0;
@@ -1868,7 +1909,7 @@ createObstacle(x, y, material, type) {
         torchData.fireSound = fireSound;
         
         // Start playing
-        fireSound.play();
+        this.playAudioSafely(fireSound, 'torch');
     }
 
     initMonsterTextures() {
@@ -1993,7 +2034,7 @@ createObstacle(x, y, material, type) {
         audioLoader.load('/sounds/scream3.mp3', (buffer) => {
             this.menuBackgroundMusic.setBuffer(buffer);
             if (!this.gameStarted) {
-                this.menuBackgroundMusic.play();
+                this.playAudioSafely(this.menuBackgroundMusic, 'menu');
             }
         });
     }
@@ -2166,37 +2207,45 @@ createObstacle(x, y, material, type) {
         const playerCellX = Math.floor(this.camera.position.x + 0.5);
         const playerCellZ = Math.floor(this.camera.position.z + 0.5);
         
-        // Throttle expensive BFS to every 500ms
+        // Throttle expensive BFS to every 800ms
         const now = performance.now();
         if (now - this.lastPathUpdateTime > this.pathUpdateIntervalMs) {
-            this.monsterPath = findPathBFS(
+            const newPath = findPathBFS(
                 this.grid, this.mazeSize, this.mazeSize,
                 currentCellX, currentCellZ,
                 playerCellX, playerCellZ
             );
+            
+            // Only update path if it's significantly different or we don't have one
+            if (newPath.length > 0 && !this.pathsAreEqual(this.monsterPath, newPath)) {
+                this.monsterPath = newPath;
+                this.currentPathIndex = 0;
+                this.updateMonsterTarget();
+            }
             this.lastPathUpdateTime = now;
         }
-        const path = this.monsterPath;
         
-        if (path.length > 0) {
-            const nextCell = path[0];
-            const targetX = nextCell[0];
-            const targetZ = nextCell[1];
-            
-            const dx = targetX - this.monster.position.x;
-            const dz = targetZ - this.monster.position.z;
+        // Move towards current target position
+        if (this.monsterTargetPosition) {
+            const dx = this.monsterTargetPosition.x - this.monster.position.x;
+            const dz = this.monsterTargetPosition.z - this.monster.position.z;
             const dist = Math.sqrt(dx * dx + dz * dz);
             
             if (dist > 0.05) {
+                // Smooth movement with proper delta time scaling
                 const moveX = (dx / dist) * this.monsterSpeed * delta;
                 const moveZ = (dz / dist) * this.monsterSpeed * delta;
                 this.monster.position.x += moveX;
                 this.monster.position.z += moveZ;
 
-                // Smooth rotation
+                // Smooth rotation towards movement direction
                 const angle = Math.atan2(dx, dz);
                 const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                this.monster.quaternion.slerp(targetRotation, 0.1);
+                this.monster.quaternion.slerp(targetRotation, 0.15); // Increased for smoother rotation
+            } else {
+                // Reached current target, move to next waypoint
+                this.currentPathIndex++;
+                this.updateMonsterTarget();
             }
         } else {
             // Direct line of sight fallback or close proximity
@@ -2213,7 +2262,7 @@ createObstacle(x, y, material, type) {
                 // Smooth rotation
                 const angle = Math.atan2(dx, dz);
                 const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                this.monster.quaternion.slerp(targetRotation, 0.1);
+                this.monster.quaternion.slerp(targetRotation, 0.15);
             }
         }
 
@@ -2221,6 +2270,25 @@ createObstacle(x, y, material, type) {
         const distToPlayer = this.camera.position.distanceTo(this.monster.position);
         if (distToPlayer < 0.6) {
             this.handleGameOver();
+        }
+    }
+    
+    // Helper method to compare paths
+    pathsAreEqual(path1, path2) {
+        if (path1.length !== path2.length) return false;
+        for (let i = 0; i < path1.length; i++) {
+            if (path1[i][0] !== path2[i][0] || path1[i][1] !== path2[i][1]) return false;
+        }
+        return true;
+    }
+    
+    // Update monster's target position based on current path index
+    updateMonsterTarget() {
+        if (this.monsterPath.length > 0 && this.currentPathIndex < this.monsterPath.length) {
+            const targetCell = this.monsterPath[this.currentPathIndex];
+            this.monsterTargetPosition = new THREE.Vector3(targetCell[0], 0.5, targetCell[1]);
+        } else {
+            this.monsterTargetPosition = null;
         }
     }
     
@@ -2390,7 +2458,7 @@ createObstacle(x, y, material, type) {
             // Don't null out this.monster — it's permanently in scene, just hide it
             if (this.monsterSpawned) {
                 if (this.monsterSound && this.monsterSound.isPlaying) {
-                    this.monsterSound.stop();
+                    this.stopAudioSafely(this.monsterSound);
                 }
                 this.monster.visible = false;
                 this.monsterSpawned = false;
@@ -2421,22 +2489,47 @@ createObstacle(x, y, material, type) {
         const volume = this.isMuted ? 0 : 1;
         this.listener.setMasterVolume(volume);
         document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
+    }
+
+    // Optimized audio utilities
+    playAudioSafely(audio, audioKey = null) {
+        if (!audio || this.isMuted) return;
         
-        // Control preloader audio as well
-        const preloaderScream = document.getElementById('preloader-scream');
-        if (preloaderScream) {
-            if (this.isMuted) {
-                preloaderScream.pause();
-            } else {
-                // Resume if preloader is still visible
-                const preloader = document.getElementById('preloader');
-                if (preloader && preloader.style.display !== 'none') {
-                    preloaderScream.play().catch(e => {
-                        console.warn('Failed to resume preloader audio:', e);
-                    });
-                }
+        // Debounce check if key provided
+        if (audioKey) {
+            const now = performance.now();
+            if (now - (this.audioDebounceTime[audioKey] || 0) < this.audioDebounceDelay) {
+                return;
             }
+            this.audioDebounceTime[audioKey] = now;
         }
+        
+        setTimeout(() => {
+            try {
+                if (audio?.context?.state === 'suspended') {
+                    audio.context.resume();
+                }
+                if (!audio.isPlaying) {
+                    audio.play();
+                }
+            } catch (e) {
+                console.warn(`Audio play failed (${audioKey || 'unknown'}):`, e);
+            }
+        }, 0);
+    }
+
+    stopAudioSafely(audio) {
+        if (!audio) return;
+        
+        setTimeout(() => {
+            try {
+                if (audio.isPlaying) {
+                    audio.stop();
+                }
+            } catch (e) {
+                console.warn('Audio stop failed:', e);
+            }
+        }, 0);
     }
 
     applyPowerup(type) {
