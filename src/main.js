@@ -61,7 +61,7 @@ class Game {
         this.monster = null;
         this.isGameOver = false;
         this.monsterSpawned = false;
-        this.baseMonsterSpeed = 1.12; // Reduced by 30% (from 1.6)
+        this.baseMonsterSpeed = 0.896; // Reduced by 20% (from 1.12)
         this.monsterSpeed = this.baseMonsterSpeed;
         this.monsterTextures = [];
         this.useFogOfWar = true;
@@ -73,7 +73,7 @@ class Game {
         this.powerups = [];
         this.batteries = []; // Battery collection
         this.batteryLevel = 100; // Flashlight battery
-        this.basePlayerSpeed = 28.0; // Reduced by 30% (from 40.0)
+        this.basePlayerSpeed = 19.6; // Reduced by 30% (from 28.0)
         this.playerSpeed = this.basePlayerSpeed;
         this.crouchKeyPressed = false;
         this.slowPowerupRemaining = 0;
