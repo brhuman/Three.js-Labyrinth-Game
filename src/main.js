@@ -616,8 +616,8 @@ class Game {
                 document.getElementById('menu').style.display = 'block';
                 
                 // Show control buttons when paused
-                document.getElementById('mute-btn').style.display = 'block';
-                document.getElementById('fullscreen-btn').style.display = 'block';
+                document.getElementById('mute-btn').style.display = 'flex';
+                document.getElementById('fullscreen-btn').style.display = 'flex';
                 
                 // Play menu music
                 if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
@@ -630,8 +630,8 @@ class Game {
                 this.lastUnlockTime = Date.now();
                 
                 // Show control buttons when toggling fullscreen
-                document.getElementById('mute-btn').style.display = 'block';
-                document.getElementById('fullscreen-btn').style.display = 'block';
+                document.getElementById('mute-btn').style.display = 'flex';
+                document.getElementById('fullscreen-btn').style.display = 'flex';
             }
             
             // Always hide HUD and crosshair when unlocking
@@ -684,8 +684,8 @@ class Game {
         this.animate();
         
         // Show control buttons in menu initially
-        document.getElementById('mute-btn').style.display = 'block';
-        document.getElementById('fullscreen-btn').style.display = 'block';
+        document.getElementById('mute-btn').style.display = 'flex';
+        document.getElementById('fullscreen-btn').style.display = 'flex';
         
         // Handle preloader scream audio with multiple attempts
         const preloaderScream = document.getElementById('preloader-scream');
@@ -3174,8 +3174,8 @@ createObstacle(x, y, material, type) {
         document.getElementById('game-over').style.display = 'block';
         
         // Show control buttons when game is over
-        document.getElementById('mute-btn').style.display = 'block';
-        document.getElementById('fullscreen-btn').style.display = 'block';
+        document.getElementById('mute-btn').style.display = 'flex';
+        document.getElementById('fullscreen-btn').style.display = 'flex';
         
         // Calculate final statistics
         const timeElapsed = this.startTime ? (Date.now() - this.startTime + this.totalPausedDuration) : 0;
