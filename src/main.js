@@ -463,6 +463,32 @@ class Game {
             });
         }
 
+        // Load fire sound for torches
+        this.fireSoundBuffer = null;
+        audioLoader.load('/sounds/fire.mp3', (buffer) => {
+            this.fireSoundBuffer = buffer;
+            // Retroactively add sound to all existing torches
+            this.torchLights.forEach(torchData => {
+                if (torchData.group && !torchData.fireSound) {
+                    this.addAudioToTorch(torchData);
+                }
+            });
+        });
+
+        // Load flashlight sound
+        this.flashlightSoundBuffer = null;
+        audioLoader.load('/sounds/light.mp3', (buffer) => {
+            this.flashlightSoundBuffer = buffer;
+            
+            // Set buffer for flashlight sounds if they already exist
+            if (this.flashlightOnSound && this.flashlightOffSound) {
+                this.flashlightOnSound.setBuffer(buffer);
+                this.flashlightOffSound.setBuffer(buffer);
+                this.flashlightOnSound.setVolume(0.5);
+                this.flashlightOffSound.setVolume(0.3);
+            }
+        });
+
         // Initialize menu background music
         this.initMenuBackgroundMusic();
 
@@ -500,6 +526,22 @@ class Game {
             
             document.addEventListener('click', startAudioOnInteraction);
             document.addEventListener('keydown', startAudioOnInteraction);
+            
+            // Handle tab visibility - pause when tab is inactive
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    // Tab is not active - pause audio
+                    if (!preloaderScream.paused) {
+                        preloaderScream.pause();
+                    }
+                } else {
+                    // Tab is active - resume audio if preloader is still visible
+                    const preloader = document.getElementById('preloader');
+                    if (preloader && preloader.style.display !== 'none') {
+                        tryPlay();
+                    }
+                }
+            });
         }
         
         // Track texture loading
@@ -586,6 +628,13 @@ class Game {
         this.crouchBeams = [];
         this.goal = null;
         this.torchLights = [];
+        
+        // Stop torch fire sounds
+        this.torchLights.forEach(torch => {
+            if (torch.fireSound && torch.fireSound.isPlaying) {
+                torch.fireSound.stop();
+            }
+        });
     }
 
     updateSunFrustum() {
@@ -1556,13 +1605,39 @@ class Game {
         this.scene.add(torchGroup);
         
         // Store for animation
-        this.torchLights.push({
+        const torchData = {
+            group: torchGroup,
             light,
             flameMeshes,
             baseIntensity: 2.4,
             gridX: x,
             gridZ: z
-        });
+        };
+
+        // Add fire sound if buffer is loaded
+        if (this.fireSoundBuffer) {
+            this.addAudioToTorch(torchData);
+        }
+
+        this.torchLights.push(torchData);
+    }
+
+    addAudioToTorch(torchData) {
+        if (!this.fireSoundBuffer || torchData.fireSound) return;
+
+        const fireSound = new THREE.PositionalAudio(this.listener);
+        fireSound.setBuffer(this.fireSoundBuffer);
+        fireSound.setLoop(true);
+        fireSound.setRefDistance(1.0);
+        fireSound.setRolloffFactor(2);
+        fireSound.setDistanceModel('exponential');
+        fireSound.setVolume(0.8);
+        
+        torchData.group.add(fireSound);
+        torchData.fireSound = fireSound;
+        
+        // Start playing
+        fireSound.play();
     }
 
     initMonsterTextures() {
@@ -1634,6 +1709,50 @@ class Game {
         });
     }
 
+    initSepiaNoise() {
+        const noiseDiv = document.getElementById('sepia-noise');
+        if (!noiseDiv) return;
+        
+        // Create canvas for noise generation
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 200;
+        canvas.height = 200;
+        
+        const generateSepiaNoise = () => {
+            const imageData = ctx.createImageData(canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                // Generate sepia-toned noise
+                const gray = Math.random() * 255;
+                const r = Math.min(255, (gray * 0.393) + (gray * 0.769) + (gray * 0.189));
+                const g = Math.min(255, (gray * 0.349) + (gray * 0.686) + (gray * 0.168));
+                const b = Math.min(255, (gray * 0.272) + (gray * 0.534) + (gray * 0.131));
+                
+                // Random opacity for noise effect
+                const alpha = Math.random() < 0.1 ? Math.random() * 100 : 0;
+                
+                data[i] = r;
+                data[i + 1] = g;
+                data[i + 2] = b;
+                data[i + 3] = alpha;
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            noiseDiv.style.backgroundImage = `url(${canvas.toDataURL()})`;
+            noiseDiv.style.backgroundSize = '200px 200px';
+        };
+        
+        // Update noise periodically
+        const updateNoise = () => {
+            generateSepiaNoise();
+            setTimeout(updateNoise, 100);
+        };
+        
+        updateNoise();
+    }
+
     initMenuBackgroundMusic() {
         this.menuBackgroundMusic = new THREE.Audio(this.listener);
         this.menuBackgroundMusic.setLoop(true);
@@ -1649,35 +1768,17 @@ class Game {
     }
 
     initFlashlightSounds() {
-        const ctx = this.listener.context;
-        if (!ctx) return;
-
-        const createClickBuffer = (baseFreq) => {
-            const duration = 0.08;
-            const sampleRate = ctx.sampleRate;
-            const length = Math.floor(duration * sampleRate);
-            const buffer = ctx.createBuffer(1, length, sampleRate);
-            const data = buffer.getChannelData(0);
-
-            for (let i = 0; i < length; i++) {
-                const t = i / sampleRate;
-                const env = Math.exp(-t * 40); // fast decay
-                const tone = Math.sin(2 * Math.PI * baseFreq * t);
-                const noise = (Math.random() * 2 - 1) * 0.3;
-                data[i] = (tone * 0.7 + noise * 0.5) * env;
-            }
-
-            return buffer;
-        };
-
+        // Use light.mp3 for flashlight on/off sound
         this.flashlightOnSound = new THREE.Audio(this.listener);
         this.flashlightOffSound = new THREE.Audio(this.listener);
 
-        const onBuf = createClickBuffer(900);
-        const offBuf = createClickBuffer(500);
-
-        this.flashlightOnSound.setBuffer(onBuf);
-        this.flashlightOffSound.setBuffer(offBuf);
+        // Try to set buffer immediately if already loaded
+        if (this.flashlightSoundBuffer) {
+            this.flashlightOnSound.setBuffer(this.flashlightSoundBuffer);
+            this.flashlightOffSound.setBuffer(this.flashlightSoundBuffer);
+            this.flashlightOnSound.setVolume(0.5);
+            this.flashlightOffSound.setVolume(0.3);
+        }
 
         // Attach to camera so it follows the player
         this.camera.add(this.flashlightOnSound);
@@ -1899,12 +2000,13 @@ class Game {
     }
 
     playDeathScream() {
-        if (this.screamBuffers.length === 0) return;
+        // Always play scream5.mp3 (index 4 in the array)
+        if (this.screamBuffers.length < 5) return;
         
         const scream = new THREE.Audio(this.listener);
-        const randomBuffer = this.screamBuffers[Math.floor(Math.random() * this.screamBuffers.length)];
+        const screamBuffer = this.screamBuffers[4]; // scream5.mp3 is at index 4
         
-        scream.setBuffer(randomBuffer);
+        scream.setBuffer(screamBuffer);
         scream.setVolume(2.1); // 3x louder
         scream.play();
 
@@ -2040,8 +2142,25 @@ class Game {
 
     toggleMute() {
         this.isMuted = !this.isMuted;
-        this.listener.setMasterVolume(this.isMuted ? 0 : 1);
+        const volume = this.isMuted ? 0 : 1;
+        this.listener.setMasterVolume(volume);
         document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
+        
+        // Control preloader audio as well
+        const preloaderScream = document.getElementById('preloader-scream');
+        if (preloaderScream) {
+            if (this.isMuted) {
+                preloaderScream.pause();
+            } else {
+                // Resume if preloader is still visible
+                const preloader = document.getElementById('preloader');
+                if (preloader && preloader.style.display !== 'none') {
+                    preloaderScream.play().catch(e => {
+                        console.warn('Failed to resume preloader audio:', e);
+                    });
+                }
+            }
+        }
     }
 }
 
