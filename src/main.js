@@ -53,7 +53,7 @@ class Game {
         // Difficulty settings (moved here to fix initialization order)
         this.difficulty = 'normal'; // Default difficulty (Normal as requested)
         this.difficultyMultipliers = {
-            super_easy: 0.2, // 20% monster speed
+            super_easy: 0.35, // 35% monster speed
             easy: 0.5,       // 50% monster speed
             normal: 0.8,     // 80% monster speed (original default)
             hard: 1.0        // 100% monster speed
@@ -227,7 +227,7 @@ class Game {
 
         // --- STAR FIELD using THREE.Points ---
         // This is the best Three.js approach: all stars in a single draw call.
-        // Stars are scattered on a sphere of radius 490 (inside sky at 500, outside clouds at 450).
+        // Stars are scattered on a sphere of radius 490 (inside sky at 500).
         const STAR_COUNT = 1500;
         const starPositions = new Float32Array(STAR_COUNT * 3);
         const starColors = new Float32Array(STAR_COUNT * 3);
@@ -292,22 +292,9 @@ class Game {
         });
         this.starSizes = starSizes;
         this.stars = new THREE.Points(starGeo, this.starMaterial);
-        this.stars.renderOrder = -1; // Always behind moon and clouds
+        this.stars.renderOrder = -1; // Always behind moon
         this.scene.add(this.stars);
 
-        // Add a secondary sphere for moving clouds
-        const cloudGeo = new THREE.SphereGeometry(450, 32, 32);
-        const cloudMat = new THREE.MeshBasicMaterial({
-            map: this.textures.clouds,
-            side: THREE.BackSide,
-            transparent: true,
-            opacity: 0.22, // Increased for visible haze
-            color: 0xffffff,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-        this.cloudSphere = new THREE.Mesh(cloudGeo, cloudMat);
-        this.scene.add(this.cloudSphere);
 
         // Add a Moon — use THREE.Sprite so it always faces the camera (billboard)
         // This avoids the 3D sphere shape causing dark patches from the texture's black background
@@ -783,7 +770,7 @@ class Game {
     initTextureLoading() {
         // Track texture loading
         let texturesLoaded = 0;
-        const totalTextures = 6; // brick, floor, clouds, moon, monster_face_1, monster_face_2
+        const totalTextures = 5; // brick, floor, moon, monster_face_1, monster_face_2
         
         const checkAllLoaded = () => {
             texturesLoaded++;
@@ -813,7 +800,6 @@ class Game {
 
         this.textures.brick = configTex('/textures/brick.png', 1, 1);
         this.textures.floor = configTex('/textures/floor.png', 10, 10);
-        this.textures.clouds = configTex('/textures/clouds.png');
         this.textures.moon = configTex('/textures/moon.png');
         
         // Monster faces are tracked as well
@@ -832,7 +818,7 @@ class Game {
                     object !== this.camera && 
                     object !== this.sky && 
                     object !== this.moon &&         // Never delete the moon
-                    object !== this.cloudSphere &&  // Never delete the cloud layer
+                    object !== this.sky &&
                     object !== this.stars &&         // Never delete the starfield
                     object !== this.moonLight &&
                     object !== this.monster &&      // Never remove the monster
@@ -2016,14 +2002,6 @@ createObstacle(x, y, material, type) {
         // Adaptive quality system removed (FPS-based)
 
         // Cloud animation disabled for performance
-        // if (this.textures.clouds) {
-        //     // Speed up clouds slightly to make the dynamic sky more noticeable
-        //     this.textures.clouds.offset.x += 0.0001;
-        //     this.textures.clouds.offset.y += 0.00005;
-        // }
-        // if (this.cloudSphere) {
-        //     this.cloudSphere.rotation.y += 0.0002; // physical rotation of the cloud dome
-        // }
 
         // --- SIMPLIFIED TORCH FLICKER LOGIC ---
         const timeNow = time * 0.003; // Slower, simpler animation
@@ -2620,10 +2598,11 @@ createObstacle(x, y, material, type) {
         fireSound.panner.panningModel = 'HRTF'; // Better spatial positioning
         fireSound.setBuffer(this.fireSoundBuffer);
         fireSound.setLoop(true);
-        fireSound.setRefDistance(2.0); // Full volume within 2 units
-        fireSound.setRolloffFactor(1.5);
-        fireSound.setDistanceModel('inverse'); // Standard natural falloff
-        fireSound.setVolume(1.0);
+        fireSound.setRefDistance(1.5); // Full volume within 1.5 units
+        fireSound.setRolloffFactor(2.5); // Faster falloff for torches for better localization
+        fireSound.setMaxDistance(15);    // Don't process sounds from very far torches
+        fireSound.setDistanceModel('inverse'); 
+        fireSound.setVolume(0.8);
         
         torchData.group.add(fireSound);
         torchData.fireSound = fireSound;
@@ -2680,10 +2659,14 @@ createObstacle(x, y, material, type) {
 
         // 3D Positional Audio — louder as player approaches
         this.monsterSound.setDistanceModel('inverse');
-        this.monsterSound.setRefDistance(3.0);   // Full volume within 3 units
-        this.monsterSound.setMaxDistance(150);
-        this.monsterSound.setRolloffFactor(1.2); // Smoother inverse falloff
+        this.monsterSound.setRefDistance(2.0);   // Full volume within 2 units
+        this.monsterSound.setMaxDistance(100);
+        this.monsterSound.setRolloffFactor(1.8); // Slightly faster falloff for better "geolocation"
         this.monsterSound.setLoop(true);
+        
+        // Directionality: Monster sounds are louder when it's facing the player
+        this.monsterSound.setDirectionalCone(60, 180, 0.4); 
+        
         // Start muted; we'll fade up when the monster actually spawns
         this.monsterSound.setVolume(0);
 
