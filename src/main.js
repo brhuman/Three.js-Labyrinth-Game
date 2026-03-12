@@ -38,7 +38,7 @@ class Game {
         this.minimapCanvas = document.getElementById('minimap');
         this.minimapCtx = this.minimapCanvas.getContext('2d');
         this.explorationGrid = [];
-        this.minimapSize = 150;
+        this.minimapSize = 180; // Increased by 20%
         this.minimapCanvas.width = this.minimapSize;
         this.minimapCanvas.height = this.minimapSize;
 
@@ -61,7 +61,12 @@ class Game {
         this.monster = null;
         this.isGameOver = false;
         this.monsterSpawned = false;
-        this.baseMonsterSpeed = 0.896; // Reduced by 20% (from 1.12)
+        this.basePlayerSpeed = 19.6; // Base player speed
+        this.playerSpeed = this.basePlayerSpeed;
+
+        // Effective player speed is playerSpeed / 10 (due to friction)
+        // User wants monster to be 20% slower than player
+        this.baseMonsterSpeed = (this.basePlayerSpeed / 10) * 0.8; 
         this.monsterSpeed = this.baseMonsterSpeed;
         this.monsterTextures = [];
         this.useFogOfWar = true;
@@ -73,11 +78,11 @@ class Game {
         this.powerups = [];
         this.batteries = []; // Battery collection
         this.batteryLevel = 100; // Flashlight battery
-        this.basePlayerSpeed = 19.6; // Reduced by 30% (from 28.0)
-        this.playerSpeed = this.basePlayerSpeed;
         this.crouchKeyPressed = false;
         this.slowPowerupRemaining = 0;
         this.speedPowerupRemaining = 0;
+        this.radarPowerupRemaining = 0; // New Tracker bonus
+        this.monsterTrackerBeam = null;
         
         // Jump physics refinement
         this.gravityValue = 12.0;
@@ -168,6 +173,18 @@ class Game {
         this.flashlightHalo.target = this.flashlightTarget;
 
         this.scene.add(this.camera);
+
+        // Create Monster Tracker Beam (Hidden by default)
+        const beamGeo = new THREE.CylinderGeometry(0.05, 0.05, 20, 8);
+        const beamMat = new THREE.MeshBasicMaterial({ 
+            color: 0xff0000, 
+            transparent: true, 
+            opacity: 0.6,
+            depthWrite: false 
+        });
+        this.monsterTrackerBeam = new THREE.Mesh(beamGeo, beamMat);
+        this.monsterTrackerBeam.visible = false;
+        this.scene.add(this.monsterTrackerBeam);
 
         // Simple synthesized flashlight click sounds (on/off)
         this.initFlashlightSounds();
@@ -566,7 +583,7 @@ class Game {
         
         // Track texture loading
         let texturesLoaded = 0;
-        const totalTextures = 7; // brick, floor, clouds, moon, monster_face_1, monster_face_2, wood
+        const totalTextures = 6; // brick, floor, clouds, moon, monster_face_1, monster_face_2
         
         const checkAllLoaded = () => {
             texturesLoaded++;
@@ -576,7 +593,7 @@ class Game {
                     preloader.style.animation = 'fadeOut 1s ease-in-out';
                     setTimeout(() => {
                         preloader.style.display = 'none';
-                        // Stop preloader scream when preloader is hidden
+                        const preloaderScream = document.getElementById('preloader-scream');
                         if (preloaderScream && !preloaderScream.paused) {
                             preloaderScream.pause();
                             preloaderScream.currentTime = 0;
@@ -595,14 +612,13 @@ class Game {
             }, onProgress, onError);
         };
         
-        // Preload all essential textures
-        this.textureLoader.load('/textures/brick.png', checkAllLoaded);
-        this.textureLoader.load('/textures/floor.png', checkAllLoaded);
-        this.textureLoader.load('/textures/clouds.png', checkAllLoaded);
-        this.textureLoader.load('/textures/moon.png', checkAllLoaded);
-        this.textureLoader.load('/textures/monster_face_1.png', checkAllLoaded);
-        this.textureLoader.load('/textures/monster_face_2.png', checkAllLoaded);
-        this.textureLoader.load('/textures/wood.png', checkAllLoaded);
+        // Preload all essential textures (don't pass checkAllLoaded as onLoad because the wrapper already calls it)
+        this.textureLoader.load('/textures/brick.png');
+        this.textureLoader.load('/textures/floor.png');
+        this.textureLoader.load('/textures/clouds.png');
+        this.textureLoader.load('/textures/moon.png');
+        this.textureLoader.load('/textures/monster_face_1.png');
+        this.textureLoader.load('/textures/monster_face_2.png');
     }
 
     clearMaze() {
@@ -694,6 +710,8 @@ class Game {
         this.scene.add(floor);
 
         const emptySpaces = [];
+        let torchCount = 0;
+        const maxTorches = 20;
         
         for (let y = 0; y < this.mazeSize; y++) {
             for (let x = 0; x < this.mazeSize; x++) {
@@ -737,36 +755,38 @@ class Game {
 
 
 
-        // Shuffle remaining empty spaces and spawn exactly one of each powerup
+        // --- ITEM SPAWNING (DISJOINT SETS) ---
         emptySpaces.sort(() => Math.random() - 0.5);
-        if (emptySpaces.length >= 2) {
-            this.spawnPowerup(emptySpaces[0].x, emptySpaces[0].y, 'speed');
-            this.spawnPowerup(emptySpaces[1].x, emptySpaces[1].y, 'slow');
-        }
+        
+        let spaceIdx = 0;
 
-        // Spawn 4-8 batteries per level
-        const numBatteries = 4 + Math.floor(Math.random() * 5);
-        for (let i = 2; i < 2 + numBatteries && i < emptySpaces.length; i++) {
-            this.spawnBattery(emptySpaces[i].x, emptySpaces[i].y);
-        }
-
-        // Spawn crouch beams in ~5% of remaining empty spaces
-        const numBeams = Math.floor(emptySpaces.length * 0.05);
-        for (let i = 2; i < 2 + numBeams && i < emptySpaces.length; i++) {
-            const bx = emptySpaces[i].x;
-            const bz = emptySpaces[i].y;
-            // Prevent spawning beams right next to the start
-            if (bx > 2 || bz > 2) {
-                this.spawnCrouchBeam(bx, bz);
+        // 1. Spawn Powerups (Doubled: 2 speed, 2 slow, 1 radar)
+        const powerupTypes = ['speed', 'speed', 'slow', 'slow', 'radar'];
+        for (const type of powerupTypes) {
+            if (spaceIdx < emptySpaces.length) {
+                const s = emptySpaces[spaceIdx++];
+                this.spawnPowerup(s.x, s.y, type);
             }
         }
 
-        // Spawn torches randomly, spaced out
-        const maxTorches = 6 + Math.floor(this.level * 1.5); // Increase slightly with level
-        let torchCount = 0;
+        // 2. Spawn Batteries (30% more: ~6-11 per level)
+        const numBatteries = 6 + Math.floor(Math.random() * 6);
+        for (let i = 0; i < numBatteries && spaceIdx < emptySpaces.length; i++) {
+            const s = emptySpaces[spaceIdx++];
+            this.spawnBattery(s.x, s.y);
+        }
+
+        // 3. Spawn Crouch Beams (disjoint from batteries)
+        const numBeams = Math.floor(emptySpaces.length * 0.05);
+        for (let i = 0; i < numBeams && spaceIdx < emptySpaces.length; i++) {
+            const s = emptySpaces[spaceIdx++];
+            if (s.x > 2 || s.y > 2) { // Prevent spawning too close to start
+                this.spawnCrouchBeam(s.x, s.y);
+            }
+        }
         
-        // Shuffle the spaces that weren't used by powerups and beams
-        const potentialTorchSpaces = emptySpaces.slice(2 + numBeams).sort(() => Math.random() - 0.5);
+        // --- TORCHES ---
+        const potentialTorchSpaces = emptySpaces.slice(spaceIdx).sort(() => Math.random() - 0.5);
         
         for (const space of potentialTorchSpaces) {
             const tx = space.x;
@@ -944,9 +964,10 @@ class Game {
     
     spawnPowerup(x, z, type) {
         const isSpeed = type === 'speed';
-        const color = isSpeed ? 0x0088ff : 0xffff00;
-        const text = isSpeed ? 'SPD' : 'SLW';
-        const cssColor = isSpeed ? '#0088ff' : '#aaaa00';
+        const isRadar = type === 'radar';
+        const color = isRadar ? 0xff0000 : (isSpeed ? 0x0088ff : 0xffff00);
+        const text = isRadar ? 'RAD' : (isSpeed ? 'SPD' : 'SLW');
+        const cssColor = isRadar ? '#ff0000' : (isSpeed ? '#0088ff' : '#aaaa00');
         
         const tex = this.createCoinTexture(text, cssColor);
         
@@ -965,6 +986,7 @@ class Game {
 
         mesh.userData = { type: type, isCoin: true };
         
+        this.scene.add(mesh);
         this.powerups.push(mesh);
     }
 
@@ -1361,6 +1383,9 @@ class Game {
                         this.monsterSpeed = this.baseMonsterSpeed * 0.5;
                         this.slowPowerupRemaining = 20; // 20 seconds
                         document.getElementById('bonus-indicator').style.display = 'block';
+                    } else if (pu.userData.type === 'radar') {
+                        this.radarPowerupRemaining = 10; // 10 seconds
+                        document.getElementById('bonus-radar-indicator').style.display = 'block';
                     }
                 }
             }
@@ -1438,10 +1463,46 @@ class Game {
             // --- POWERUP LOGIC ---
             for (let i = this.powerups.length - 1; i >= 0; i--) {
                 const powerup = this.powerups[i];
+                powerup.rotation.y += delta * 2; // Spin coins
                 if (this.camera.position.distanceTo(powerup.position) < 0.8) {
                     this.scene.remove(powerup);
                     this.powerups.splice(i, 1);
                     this.applyPowerup(powerup.userData.type);
+                }
+            }
+
+            // Powerup timers and effects
+            if (this.speedPowerupRemaining > 0) {
+                this.speedPowerupRemaining -= delta;
+                document.getElementById('bonus-speed-time').innerText = Math.ceil(this.speedPowerupRemaining) + 's';
+                if (this.speedPowerupRemaining <= 0) {
+                    this.playerSpeed = this.basePlayerSpeed;
+                    document.getElementById('bonus-speed-indicator').style.display = 'none';
+                }
+            }
+
+            if (this.slowPowerupRemaining > 0) {
+                this.slowPowerupRemaining -= delta;
+                document.getElementById('bonus-time').innerText = Math.ceil(this.slowPowerupRemaining) + 's';
+                if (this.slowPowerupRemaining <= 0) {
+                    this.monsterSpeed = this.baseMonsterSpeed;
+                    document.getElementById('bonus-indicator').style.display = 'none';
+                }
+            }
+
+            if (this.radarPowerupRemaining > 0) {
+                this.radarPowerupRemaining -= delta;
+                document.getElementById('bonus-radar-time').innerText = Math.ceil(this.radarPowerupRemaining) + 's';
+                
+                // Update beam position
+                if (this.monsterTrackerBeam && this.monster) {
+                    this.monsterTrackerBeam.visible = true;
+                    this.monsterTrackerBeam.position.set(this.monster.position.x, 10, this.monster.position.z);
+                }
+
+                if (this.radarPowerupRemaining <= 0) {
+                    document.getElementById('bonus-radar-indicator').style.display = 'none';
+                    if (this.monsterTrackerBeam) this.monsterTrackerBeam.visible = false;
                 }
             }
 
@@ -2001,7 +2062,8 @@ class Game {
         this.slowPowerupRemaining = 0;
         this.monsterSpeed = this.baseMonsterSpeed;
         
-        document.getElementById('keys').innerText = this.playerKeys;
+        const keysEl = document.getElementById('keys');
+        if (keysEl) keysEl.innerText = this.playerKeys;
         document.getElementById('monster-timer').textContent = "5.0s";
         document.getElementById('timer').textContent = "00:00";
         document.getElementById('bonus-indicator').style.display = 'none';
@@ -2109,10 +2171,27 @@ class Game {
         // Draw Player
         const px = (this.camera.position.x * cellSize) + cellSize/2;
         const py = (this.camera.position.z * cellSize) + cellSize/2;
-        ctx.fillStyle = '#ff0000';
+        ctx.fillStyle = '#00ff00'; // Green player
         ctx.beginPath();
-        ctx.arc(px, py, cellSize / 3, 0, Math.PI * 2);
+        ctx.arc(px, py, cellSize / 2, 0, Math.PI * 2);
         ctx.fill();
+
+        // Draw Monster if Radar is active
+        if (this.radarPowerupRemaining > 0 && this.monster && this.monsterSpawned) {
+            const mx = (this.monster.position.x * cellSize) + cellSize/2;
+            const my = (this.monster.position.z * cellSize) + cellSize/2;
+            ctx.fillStyle = '#ff0000'; // Red monster
+            ctx.beginPath();
+            ctx.arc(mx, my, cellSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Pulsating glow for monster
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(mx, my, (cellSize / 2) + Math.sin(Date.now() / 100) * 2, 0, Math.PI * 2);
+            ctx.stroke();
+        }
 
         // Draw Goal if revealed
         const gx = (this.goal.position.x * cellSize) + cellSize/2;
@@ -2173,7 +2252,27 @@ class Game {
             }
         }
     }
-}
 
+    applyPowerup(type) {
+        if (type === 'speed') {
+            this.speedPowerupRemaining = 15;
+            this.playerSpeed = this.basePlayerSpeed * 1.5;
+            document.getElementById('bonus-speed-indicator').style.display = 'block';
+            document.getElementById('bonus-speed-time').innerText = '15s';
+        } else if (type === 'slow') {
+            this.slowPowerupRemaining = 20;
+            this.monsterSpeed = this.baseMonsterSpeed * 0.5;
+            document.getElementById('bonus-indicator').style.display = 'block';
+            document.getElementById('bonus-time').innerText = '20s';
+        } else if (type === 'radar') {
+            this.radarPowerupRemaining = 30;
+            document.getElementById('bonus-radar-indicator').style.display = 'block';
+            document.getElementById('bonus-radar-time').innerText = '30s';
+            if (this.monsterTrackerBeam) {
+                this.monsterTrackerBeam.visible = true;
+            }
+        }
+    }
+}
 
 new Game();
