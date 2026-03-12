@@ -108,6 +108,8 @@ class Game {
 
         this.isFullscreenToggling = false;
         this.gameStarted = false;
+        this.isPaused = false;
+        this.menuBackgroundMusic = null;
 
         this.init();
 
@@ -324,7 +326,12 @@ class Game {
             if (this.monsterSpawned) {
                 this.monster.visible = false;
                 this.monsterSpawned = false;
+                this.monster.position.set(0, 0.5, 1);
+                this.monsterVolume = 0;
+                this.monsterVolumeTarget = 0;
             }
+            // Reset monster timer for new game
+            this.startTime = Date.now();
             // Always stop monster sound when restarting — it may have been playing during death screen
             if (this.monsterSound && this.monsterSound.isPlaying) {
                 this.monsterSound.stop();
@@ -337,6 +344,11 @@ class Game {
                         this.explorationGrid[y][x] = true;
                     }
                 }
+            }
+            
+            // Stop menu music when starting game
+            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
+                this.menuBackgroundMusic.pause();
             }
             
             this.controls.lock();
@@ -449,6 +461,9 @@ class Game {
             });
         }
 
+        // Initialize menu background music
+        this.initMenuBackgroundMusic();
+
         this.buildMaze();
         this.animate();
     }
@@ -469,6 +484,9 @@ class Game {
                 object !== this.monsterSound && // Keep monster's heart beating
                 object !== this.monsterLight && // Keep monster's glow
                 object !== this.playerLight &&  // Keep player's hand-held torch
+                object !== this.flashlight &&     // Never delete the flashlight
+                object !== this.flashlightHalo && // Never delete the flashlight halo
+                object !== this.flashlightTarget && // Never delete the flashlight target
                 !object.isAmbientLight) {
                 toRemove.push(object);
             }
@@ -1053,7 +1071,7 @@ class Game {
 
         // Smooth monster ambient volume fade (for spawn / stop)
         if (this.monsterSound) {
-            const fadeSpeed = 1.5; // higher = faster fade (per second)
+            const fadeSpeed = 0.17; // 6-second fade duration (1/6 ≈ 0.17)
             const diff = this.monsterVolumeTarget - this.monsterVolume;
             if (Math.abs(diff) > 0.001) {
                 this.monsterVolume += diff * Math.min(1, fadeSpeed * delta);
@@ -1109,7 +1127,7 @@ class Game {
 
         // Move the moon slowly
         if (this.moonLight) {
-            const sunSpeed = 0.000013; // 30% faster than 0.00001
+            const sunSpeed = 0.0000169; // 30% faster than 0.000013
             this.moonLight.position.x = Math.sin(time * sunSpeed) * 30;
             this.moonLight.position.z = Math.cos(time * sunSpeed) * 30;
             this.moonLight.position.y = 40;
@@ -1541,6 +1559,20 @@ class Game {
         });
     }
 
+    initMenuBackgroundMusic() {
+        this.menuBackgroundMusic = new THREE.Audio(this.listener);
+        this.menuBackgroundMusic.setLoop(true);
+        this.menuBackgroundMusic.setVolume(0.3);
+        
+        const audioLoader = new THREE.AudioLoader();
+        audioLoader.load('/sounds/scream3.mp3', (buffer) => {
+            this.menuBackgroundMusic.setBuffer(buffer);
+            if (!this.gameStarted) {
+                this.menuBackgroundMusic.play();
+            }
+        });
+    }
+
     initFlashlightSounds() {
         const ctx = this.listener.context;
         if (!ctx) return;
@@ -1911,9 +1943,23 @@ class Game {
 
     toggleMenu() {
         if (this.controls.isLocked) {
+            // Pause the game
+            this.isPaused = true;
             this.controls.unlock();
+            
+            // Play menu music
+            if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
+                this.menuBackgroundMusic.play();
+            }
         } else {
+            // Resume the game
+            this.isPaused = false;
             this.controls.lock();
+            
+            // Stop menu music
+            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
+                this.menuBackgroundMusic.pause();
+            }
         }
     }
 
