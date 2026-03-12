@@ -567,10 +567,10 @@ class Game {
                         }, 5000);
                     }
                 }, 1000); // Wait 1 second before showing hint
-            } else if (this.level === 4 && !this.flashlightHintShown) {
+            } else if (this.level === 5 && !this.flashlightHintShown) {
                 setTimeout(() => {
                     // Only show if game is still active and hint hasn't been shown yet
-                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver && this.level === 4) {
+                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver && this.level === 5) {
                         const hint = document.getElementById('flashlight-hint');
                         hint.style.display = 'block';
                         hint.classList.add('show');
@@ -2615,12 +2615,13 @@ createObstacle(x, y, material, type) {
         if (!this.fireSoundBuffer || torchData.fireSound) return;
 
         const fireSound = new THREE.PositionalAudio(this.listener);
+        fireSound.panner.panningModel = 'HRTF'; // Better spatial positioning
         fireSound.setBuffer(this.fireSoundBuffer);
         fireSound.setLoop(true);
-        fireSound.setRefDistance(1.0);
-        fireSound.setRolloffFactor(2);
-        fireSound.setDistanceModel('exponential');
-        fireSound.setVolume(0.8);
+        fireSound.setRefDistance(2.0); // Full volume within 2 units
+        fireSound.setRolloffFactor(1.5);
+        fireSound.setDistanceModel('inverse'); // Standard natural falloff
+        fireSound.setVolume(1.0);
         
         torchData.group.add(fireSound);
         torchData.fireSound = fireSound;
@@ -2673,12 +2674,13 @@ createObstacle(x, y, material, type) {
 
     initMonsterSound() {
         this.monsterSound = new THREE.PositionalAudio(this.listener);
+        this.monsterSound.panner.panningModel = 'HRTF'; // Better spatial positioning
 
-        // 3D Positional Audio — louder as player approaches (reduced range)
-        this.monsterSound.setDistanceModel('exponential');
-        this.monsterSound.setRefDistance(1.5);   // Full volume 1.5 units away (increased for better close range)
-        this.monsterSound.setMaxDistance(120);   // Audible up to 120 units away (reduced from 210)
-        this.monsterSound.setRolloffFactor(1.8); // Steeper falloff for shorter hearing range
+        // 3D Positional Audio — louder as player approaches
+        this.monsterSound.setDistanceModel('inverse');
+        this.monsterSound.setRefDistance(3.0);   // Full volume within 3 units
+        this.monsterSound.setMaxDistance(150);
+        this.monsterSound.setRolloffFactor(1.2); // Smoother inverse falloff
         this.monsterSound.setLoop(true);
         // Start muted; we'll fade up when the monster actually spawns
         this.monsterSound.setVolume(0);
