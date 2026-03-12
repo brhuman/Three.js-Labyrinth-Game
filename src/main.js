@@ -51,11 +51,12 @@ class Game {
         this.playerSpeed = this.basePlayerSpeed;
 
         // Difficulty settings (moved here to fix initialization order)
-        this.difficulty = 'easy'; // Default difficulty (Easy as requested)
+        this.difficulty = 'normal'; // Default difficulty (Normal as requested)
         this.difficultyMultipliers = {
-            easy: 0.5,    // 50% monster speed
-            normal: 0.8,  // 80% monster speed (current default)
-            hard: 1.0     // 100% monster speed
+            super_easy: 0.2, // 20% monster speed
+            easy: 0.5,       // 50% monster speed
+            normal: 0.8,     // 80% monster speed (original default)
+            hard: 1.0        // 100% monster speed
         };
 
         // Effective player speed is playerSpeed / 10 (due to friction)
@@ -757,7 +758,8 @@ class Game {
             
             // Update description
             const speedPercentage = Math.round(this.difficultyMultipliers[selectedDifficulty] * 100);
-            difficultyDescription.textContent = `Monster speed: ${speedPercentage}% (${selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1)})`;
+            const displayName = selectedDifficulty.replace('_', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            difficultyDescription.textContent = `Monster speed: ${speedPercentage}% (${displayName})`;
             
             // Update monster speed if game is not started
             if (!this.gameStarted) {
