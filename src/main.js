@@ -109,6 +109,7 @@ class Game {
         this.isFullscreenToggling = false;
         this.gameStarted = false;
         this.pauseTime = null;
+        this.lastUnlockTime = 0;
         this.totalPausedDuration = 0;
 
         this.init();
@@ -458,6 +459,7 @@ class Game {
             if (!this.isGameOver && !this.isFullscreenToggling) {
                 this.isPaused = true;
                 this.pauseTime = Date.now();
+                this.lastUnlockTime = Date.now();
                 document.getElementById('menu').style.display = 'block';
                 
                 // Play menu music
@@ -1076,11 +1078,6 @@ class Game {
             case 'KeyL':
                 if (this.toggleFullscreen) this.toggleFullscreen();
                 break;
-            case 'Escape':
-                if (this.gameStarted && !this.isGameOver && this.isPaused) {
-                    this.controls.lock();
-                }
-                break;
         }
 
     }
@@ -1095,6 +1092,14 @@ class Game {
             case 'KeyS': this.moveBackward = false; break;
             // case 'ArrowRight':
             case 'KeyD': this.moveRight = false; break;
+            case 'Escape':
+                if (this.gameStarted && !this.isGameOver && this.isPaused) {
+                    // Debounce: verify that this is not the release of the key that just paused the game
+                    if (Date.now() - this.lastUnlockTime > 250) {
+                        this.controls.lock();
+                    }
+                }
+                break;
             case 'ControlLeft':
             case 'ControlRight':
             case 'KeyC':
