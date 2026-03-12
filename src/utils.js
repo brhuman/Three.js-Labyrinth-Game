@@ -1,4 +1,4 @@
-export function findPathBFS(grid, width, height, startX, startY, endX, endY) {
+export function findPathBFS(grid, width, height, startX, startY, endX, endY, isMonster = false) {
     if (startX === endX && startY === endY) return [];
     
     const queue = [[startX, startY]];
@@ -27,8 +27,10 @@ export function findPathBFS(grid, width, height, startX, startY, endX, endY) {
             const ny = cy + dir.y;
             
             if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                // grid[ny][nx] !== 1 (wall)
-                if (grid[ny][nx] !== 1 && !visited[ny][nx]) {
+                // For monster: allow passing through crouch beams (type 4), for player: block them
+                const isBlocked = isMonster ? grid[ny][nx] === 1 : grid[ny][nx] === 1 || grid[ny][nx] === 4;
+                
+                if (!isBlocked && !visited[ny][nx]) {
                     visited[ny][nx] = true;
                     parent[ny][nx] = [cx, cy];
                     queue.push([nx, ny]);

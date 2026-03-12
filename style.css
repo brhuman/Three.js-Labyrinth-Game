@@ -273,3 +273,372 @@ button:hover {
 #mute-btn:active {
   transform: scale(0.95);
 }
+
+/* Flashlight Hint Styles */
+.flashlight-hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, rgba(20, 20, 30, 0.95), rgba(10, 10, 20, 0.95));
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 2px solid rgba(255, 200, 100, 0.3);
+  border-radius: 20px;
+  padding: 30px 40px;
+  text-align: center;
+  z-index: 1000;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.8);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 
+    0 0 50px rgba(255, 200, 100, 0.2),
+    0 10px 40px rgba(0, 0, 0, 0.5),
+    inset 0 0 20px rgba(255, 200, 100, 0.1);
+  pointer-events: none;
+}
+
+.flashlight-hint.show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+
+.flashlight-hint.fade-out {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.flashlight-icon {
+  font-size: 3rem;
+  margin-bottom: 15px;
+  animation: flashlight-pulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 20px rgba(255, 200, 100, 0.6));
+}
+
+.flashlight-text {
+  color: #ffffff;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-shadow: 0 0 10px rgba(255, 200, 100, 0.3);
+}
+
+.flashlight-subtitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-weight: 400;
+  font-style: italic;
+}
+
+.flashlight-text kbd {
+  display: inline-block;
+  background: rgba(255, 200, 100, 0.2);
+  border: 1px solid rgba(255, 200, 100, 0.4);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 0 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffc864;
+  text-shadow: 0 0 5px rgba(255, 200, 100, 0.5);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes flashlight-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 20px rgba(255, 200, 100, 0.6));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 30px rgba(255, 200, 100, 0.8));
+  }
+}
+
+/* Monster Timer Styles */
+.monster-timer-panel {
+  border: 2px solid rgba(220, 20, 60, 0.8) !important;
+  background: linear-gradient(135deg, rgba(139, 0, 0, 0.9), rgba(220, 20, 60, 0.8)) !important;
+  box-shadow: 
+    0 0 30px rgba(220, 20, 60, 0.6),
+    0 0 60px rgba(139, 0, 0, 0.4),
+    inset 0 0 20px rgba(255, 0, 0, 0.2) !important;
+  animation: monster-timer-glow 2s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+}
+
+.monster-timer-panel::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(45deg, #8b0000, #dc143c, #8b0000, #dc143c);
+  background-size: 400% 400%;
+  animation: monster-border-flow 3s ease infinite;
+  z-index: -1;
+  border-radius: 16px;
+}
+
+.monster-timer-header {
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: 8px;
+  text-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.monster-timer-container {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 30px;
+}
+
+.monster-timer-text {
+  color: #ffffff;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  text-shadow: 
+    0 0 10px rgba(255, 0, 0, 0.8),
+    0 0 20px rgba(220, 20, 60, 0.6);
+  z-index: 2;
+  position: relative;
+}
+
+.monster-timer-text.warning {
+  color: #ffff00;
+  text-shadow: 
+    0 0 15px rgba(255, 255, 0, 0.8),
+    0 0 30px rgba(255, 140, 0, 0.6);
+  animation: monster-warning-pulse 0.5s ease-in-out infinite;
+}
+
+.monster-timer-text.danger {
+  color: #ff0000;
+  text-shadow: 
+    0 0 20px rgba(255, 0, 0, 1),
+    0 0 40px rgba(220, 20, 60, 0.8);
+  animation: monster-danger-pulse 0.3s ease-in-out infinite;
+}
+
+.monster-timer-text.active {
+  color: #00ff00;
+  text-shadow: 
+    0 0 15px rgba(0, 255, 0, 0.8),
+    0 0 30px rgba(0, 200, 0, 0.6);
+  animation: monster-active-glow 1s ease-in-out infinite;
+}
+
+.monster-timer-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(220, 20, 60, 0.3), transparent);
+  animation: monster-pulse 2s ease-in-out infinite;
+  z-index: 1;
+}
+
+@keyframes monster-timer-glow {
+  0%, 100% {
+    box-shadow: 
+      0 0 30px rgba(220, 20, 60, 0.6),
+      0 0 60px rgba(139, 0, 0, 0.4),
+      inset 0 0 20px rgba(255, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 
+      0 0 40px rgba(220, 20, 60, 0.8),
+      0 0 80px rgba(139, 0, 0, 0.6),
+      inset 0 0 30px rgba(255, 0, 0, 0.3);
+  }
+}
+
+@keyframes monster-border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes monster-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.6;
+  }
+}
+
+@keyframes monster-warning-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes monster-danger-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.8;
+  }
+}
+
+@keyframes monster-active-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Monster Countdown Display */
+.monster-countdown {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  z-index: 100;
+  pointer-events: none;
+  animation: countdown-appear 0.5s ease-out;
+}
+
+.countdown-number {
+  font-size: 8rem;
+  font-weight: 900;
+  font-family: 'Arial Black', sans-serif;
+  color: #ffffff;
+  text-shadow: 
+    0 0 20px rgba(255, 0, 0, 0.8),
+    0 0 40px rgba(220, 20, 60, 0.6),
+    0 0 60px rgba(139, 0, 0, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.8);
+  animation: countdown-pulse 1s ease-in-out infinite;
+  margin-bottom: 20px;
+}
+
+.countdown-number.warning {
+  color: #ffff00;
+  text-shadow: 
+    0 0 30px rgba(255, 255, 0, 0.8),
+    0 0 60px rgba(255, 140, 0, 0.6),
+    0 0 80px rgba(255, 69, 0, 0.4),
+    0 4px 8px rgba(0, 0, 0, 0.8);
+  animation: countdown-warning-pulse 0.5s ease-in-out infinite;
+}
+
+.countdown-number.danger {
+  color: #ff0000;
+  text-shadow: 
+    0 0 40px rgba(255, 0, 0, 1),
+    0 0 80px rgba(220, 20, 60, 0.8),
+    0 0 120px rgba(139, 0, 0, 0.6),
+    0 4px 8px rgba(0, 0, 0, 0.8);
+  animation: countdown-danger-pulse 0.3s ease-in-out infinite;
+}
+
+.countdown-number.run {
+  color: #00ff00;
+  text-shadow: 
+    0 0 50px rgba(0, 255, 0, 1),
+    0 0 100px rgba(0, 200, 0, 0.8),
+    0 0 150px rgba(0, 150, 0, 0.6),
+    0 4px 8px rgba(0, 0, 0, 0.8);
+  font-size: 12rem;
+  animation: countdown-run-pulse 0.8s ease-in-out infinite;
+}
+
+.countdown-text {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 
+    0 0 10px rgba(255, 0, 0, 0.8),
+    0 0 20px rgba(220, 20, 60, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  animation: text-glow 2s ease-in-out infinite;
+}
+
+@keyframes countdown-appear {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes countdown-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes countdown-warning-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes countdown-danger-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes countdown-run-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 0.8;
+  }
+}
+
+@keyframes text-glow {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}

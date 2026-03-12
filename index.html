@@ -113,9 +113,6 @@
           <div class="glass-panel">
             <div class="stats">Time: <span id="timer">00:00</span></div>
           </div>
-          <div class="glass-panel">
-            <div class="stats">Monster: <span id="monster-timer" style="color: #ff4c4c;">5.0s</span></div>
-          </div>
           <div class="glass-panel" style="border-color: #00ffff;">
             <div class="stats" style="color: #00ffff;">FPS: <span id="fps">60</span></div>
           </div>
@@ -133,6 +130,19 @@
     </div>
 
     <div id="crosshair"></div>
+    
+    <!-- Monster Countdown Display -->
+    <div id="monster-countdown" class="monster-countdown" style="display: none;">
+      <div class="countdown-number">10</div>
+      <div class="countdown-text">MONSTER SPAWNING</div>
+    </div>
+    
+    <!-- Flashlight Hint -->
+    <div id="flashlight-hint" class="flashlight-hint" style="display: none;">
+      <div class="flashlight-icon">🔦</div>
+      <div class="flashlight-text">Press <kbd>F</kbd> to enable flashlight</div>
+      <div class="flashlight-subtitle">Light your way through the darkness</div>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -9,11 +9,9 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
-        this.mazeSize = 23; // Reduced by 10% more from 26
-        this.grid = null;
-        this.walls = [];
-        this.goal = null;
         this.level = 1;
+        this.baseMazeSize = 10; // 30% smaller than previous 15
+        this.mazeSize = this.baseMazeSize; // Will be calculated per level
         this.startTime = null;
         
         this.moveForward = false;
@@ -44,7 +42,6 @@ class Game {
 
         this.textureLoader = new THREE.TextureLoader();
         this.textures = {}; // Will be populated in init()
-        this.playerKeys = 0; // Initialize missing property
         
         // Monster
         this.monster = null;
@@ -62,6 +59,16 @@ class Game {
         this.monsterBaseVolume = 1.8;
         this.monsterVolume = 0;
         this.monsterVolumeTarget = 0;
+        
+        // Monster crouch animation
+        this.monsterCrouchHeight = 0; // Current crouch offset
+        this.monsterTargetCrouchHeight = 0; // Target crouch offset
+        this.monsterCrouchSpeed = 3.0; // Speed of crouch animation
+        
+        // Monster spawn conditions
+        this.playerLeftStartArea = false; // Has player moved 2 cells from start
+        this.monsterSpawnDelay = this.getMonsterSpawnDelay(); // Level-based delay
+        this.leftStartTime = null; // When player left start area
         
         // Powerups & Progression
         this.powerups = [];
@@ -107,6 +114,7 @@ class Game {
         this.pauseTime = null;
         this.lastUnlockTime = 0;
         this.totalPausedDuration = 0;
+        this.flashlightHintShown = false; // Track if flashlight hint has been shown
         
         // Flashlight optimization
         this.flashlightDebounceTime = 0;
@@ -149,42 +157,19 @@ class Game {
         // Preload essential textures with tracking
         this.initTextureLoading();
 
-        // Enhanced Fog: чуть менее плотный, чтобы сцена казалась светлее
-        this.scene.fog = new THREE.Fog(0x040804, 0.5, 11);
-
-        // Forest-green ambient light — ещё немного темнее, но тени всё ещё читаются
-        const ambientLight = new THREE.AmbientLight(0x606860, 0.26);
-        this.scene.add(ambientLight);
-
-        // Очень мягкий "лунный" заполняющий свет — чуть ослабляем для более мрачного настроения
-        const hemiLight = new THREE.HemisphereLight(0xa0c0ff, 0x101308, 0.10);
-        this.scene.add(hemiLight);
-
-        // Silver-green moon light — оптимизированные тени для больших карт
-        this.moonLight = new THREE.DirectionalLight(0xa0b0a0, 0.84);
-        this.moonLight.castShadow = true;
-        // Optimized shadow map for performance
-        this.moonLight.shadow.mapSize.width = 512; // Reduced from 1024
-        this.moonLight.shadow.mapSize.height = 512;
-        this.moonLight.shadow.bias = -0.0005;
-        this.moonLight.shadow.normalBias = 0.01;
-        this.moonLight.shadow.radius = 1;
-        this.moonLight.shadow.camera.near = 0.1;
-        this.moonLight.shadow.camera.far = 50; // Reduced from 100
-        this.updateSunFrustum();
-        this.scene.add(this.moonLight);
-
         // Cool Flashlight (SpotLight attached to camera)
         this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.5, 20, Math.PI / 6, 0.5, 2);
         this.flashlight.position.set(0.3, -0.2, -0.2);
         this.flashlight.castShadow = true;
         this.flashlight.shadow.mapSize.width = 512;
         this.flashlight.shadow.mapSize.height = 512;
+        this.flashlight.visible = false; // Initially turned off
         this.camera.add(this.flashlight);
 
         // Flashlight Halo (Secondary soft light for scattering effect)
         this.flashlightHalo = new THREE.SpotLight(0xc0d0ff, 0.8, 10, Math.PI / 3, 0.8, 1);
         this.flashlightHalo.position.set(0.3, -0.2, -0.2);
+        this.flashlightHalo.visible = false; // Initially turned off
         this.camera.add(this.flashlightHalo);
 
         // Flashlight targets (shared)
@@ -347,6 +332,9 @@ class Game {
         this.scene.add(this.monster);
         this.renderer.compile(this.scene, this.camera);
 
+        // Настраиваем освещение в зависимости от уровня
+        this.updateLighting();
+
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
 
@@ -370,6 +358,10 @@ class Game {
             // Initial game start setup or level restart
             // (Timer and monster reset only if NOT resuming from pause)
             if (!this.isPaused) {
+                // Reset maze for new game
+                this.clearMaze();
+                this.buildMaze();
+                
                 if (this.monsterSpawned) {
                     this.monster.visible = false;
                     this.monsterSpawned = false;
@@ -382,6 +374,10 @@ class Game {
                     this.monsterTargetPosition = null;
                     this.lastPathUpdateTime = 0;
                 }
+                
+                // Reset spawn conditions
+                this.playerLeftStartArea = false;
+                this.leftStartTime = null;
                 
                 if (this.monsterSound && this.monsterSound.isPlaying) {
                     this.stopAudioSafely(this.monsterSound);
@@ -484,6 +480,39 @@ class Game {
             document.getElementById('game-over').style.display = 'none';
             document.getElementById('hud').style.display = 'flex';
             document.getElementById('crosshair').style.display = 'block';
+            
+            // Pre-warm audio context to prevent first-frame lag
+            if (this.monsterSound && this.monsterSound.context.state === 'suspended') {
+                this.monsterSound.context.resume();
+            }
+            
+            // Show flashlight hint for first-time players after 15 seconds
+            if (!this.flashlightHintShown) {
+                setTimeout(() => {
+                    // Only show if game is still active and hint hasn't been shown yet
+                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver) {
+                        const hint = document.getElementById('flashlight-hint');
+                        hint.style.display = 'block';
+                        hint.classList.add('show');
+                        this.flashlightHintShown = true;
+                        
+                        // Start fading after 3 seconds from appearance
+                        setTimeout(() => {
+                            if (hint && hint.style.display !== 'none') {
+                                hint.classList.add('fade-out');
+                            }
+                        }, 3000);
+                        
+                        // Completely hide after 5 seconds from appearance
+                        setTimeout(() => {
+                            if (hint && hint.style.display !== 'none') {
+                                hint.style.display = 'none';
+                                hint.classList.remove('show', 'fade-out');
+                            }
+                        }, 5000);
+                    }
+                }, 15000); // Wait 15 seconds before showing hint
+            }
             
             // Resume timer by adjusting startTime for the paused duration
             if (this.pauseTime) {
@@ -672,6 +701,7 @@ class Game {
                     object !== this.flashlight &&     // Never delete the flashlight
                     object !== this.flashlightHalo && // Never delete the flashlight halo
                     object !== this.flashlightTarget && // Never delete the flashlight target
+                    object !== this.goalLight && // Never delete the goal light
                     !object.isAmbientLight) {
                     toRemove.push(object);
                 }
@@ -706,22 +736,165 @@ class Game {
 
             this.walls = [];
             this.powerups = [];
-            this.keys = [];
             this.lockedDoors = [];
             this.crouchBeams = [];
             this.goal = null;
+            this.goalLight = null;
             this.torchLights = [];
         } catch (error) {
             console.error('Error in clearMaze():', error);
             // Reset arrays even if disposal fails
             this.walls = [];
             this.powerups = [];
-            this.keys = [];
             this.lockedDoors = [];
             this.crouchBeams = [];
             this.goal = null;
+            this.goalLight = null;
             this.torchLights = [];
         }
+    }
+
+    updateLighting() {
+        // Удаляем старое освещение если оно есть
+        const lightsToRemove = [];
+        this.scene.traverse((object) => {
+            if (object.isAmbientLight || object.isHemisphereLight || (this.moonLight && object === this.moonLight)) {
+                lightsToRemove.push(object);
+            }
+        });
+        
+        lightsToRemove.forEach(light => {
+            this.scene.remove(light);
+        });
+
+        // Настраиваем освещение в зависимости от уровня
+        let fogColor, fogNear, fogFar;
+        let ambientColor, ambientIntensity;
+        let hemiSkyColor, hemiGroundColor, hemiIntensity;
+        let moonColor, moonIntensity;
+
+        // Плавное затемнение на 8 уровней
+        if (this.level <= 1) {
+            // Уровень 1 - самый светлый (улучшенный)
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 25; // Увеличена дальность тумана
+            ambientColor = 0xa0a8a0; // Ярче
+            ambientIntensity = 0.50; // Увеличена интенсивность
+            hemiSkyColor = 0xc8e0ff; // Ярче
+            hemiGroundColor = 0x101308;
+            hemiIntensity = 0.25; // Увеличена интенсивность
+            moonColor = 0xd8e8d8; // Ярче
+            moonIntensity = 1.5; // Увеличена интенсивность
+        } else if (this.level === 2) {
+            // Уровень 2 - немного темнее
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 22;
+            ambientColor = 0x909890;
+            ambientIntensity = 0.45;
+            hemiSkyColor = 0xb8d0ff;
+            hemiGroundColor = 0x101308;
+            hemiIntensity = 0.22;
+            moonColor = 0xc8d8c8;
+            moonIntensity = 1.3;
+        } else if (this.level === 3) {
+            // Уровень 3 - средняя темнота
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 18;
+            ambientColor = 0x808880;
+            ambientIntensity = 0.40;
+            hemiSkyColor = 0xb0c8ff;
+            hemiGroundColor = 0x101308;
+            hemiIntensity = 0.18;
+            moonColor = 0xb8c8b8;
+            moonIntensity = 1.1;
+        } else if (this.level === 4) {
+            // Уровень 4 - довольно темный
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 15;
+            ambientColor = 0x707870;
+            ambientIntensity = 0.35;
+            hemiSkyColor = 0xa8c0ff;
+            hemiGroundColor = 0x101308;
+            hemiIntensity = 0.15;
+            moonColor = 0xb0c0b0;
+            moonIntensity = 0.95;
+        } else if (this.level === 5) {
+            // Уровень 5 - темный
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 12;
+            ambientColor = 0x606860;
+            ambientIntensity = 0.30;
+            hemiSkyColor = 0xa0b8ff;
+            hemiGroundColor = 0x0c1010;
+            hemiIntensity = 0.12;
+            moonColor = 0xa8b8a8;
+            moonIntensity = 0.80;
+        } else if (this.level === 6) {
+            // Уровень 6 - очень темный
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 10;
+            ambientColor = 0x585858;
+            ambientIntensity = 0.26;
+            hemiSkyColor = 0x98b0f0;
+            hemiGroundColor = 0x0c1010;
+            hemiIntensity = 0.10;
+            moonColor = 0xa0b0a0;
+            moonIntensity = 0.70;
+        } else if (this.level === 7) {
+            // Уровень 7 - крайне темный
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 8;
+            ambientColor = 0x505850;
+            ambientIntensity = 0.23;
+            hemiSkyColor = 0x90a8e8;
+            hemiGroundColor = 0x0c1010;
+            hemiIntensity = 0.08;
+            moonColor = 0x98a898;
+            moonIntensity = 0.60;
+        } else {
+            // Уровень 8+ - самый темный
+            fogColor = 0x040804;
+            fogNear = 0.5;
+            fogFar = 6; // Минимальная дальность тумана
+            ambientColor = 0x485048;
+            ambientIntensity = 0.20; // Минимальная интенсивность
+            hemiSkyColor = 0x88a0e0;
+            hemiGroundColor = 0x081008;
+            hemiIntensity = 0.06; // Минимальная интенсивность
+            moonColor = 0x90a090;
+            moonIntensity = 0.50; // Минимальная интенсивность
+        }
+
+        // Обновляем туман
+        this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+        this.renderer.setClearColor(fogColor);
+
+        // Создаем новое освещение
+        const ambientLight = new THREE.AmbientLight(ambientColor, ambientIntensity);
+        ambientLight.isAmbientLight = true; // Помечаем для последующего удаления
+        this.scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(hemiSkyColor, hemiGroundColor, hemiIntensity);
+        this.scene.add(hemiLight);
+
+        this.moonLight = new THREE.DirectionalLight(moonColor, moonIntensity);
+        this.moonLight.castShadow = true;
+        this.moonLight.shadow.mapSize.width = 512;
+        this.moonLight.shadow.mapSize.height = 512;
+        this.moonLight.shadow.bias = -0.0005;
+        this.moonLight.shadow.normalBias = 0.01;
+        this.moonLight.shadow.radius = 1;
+        this.moonLight.shadow.camera.near = 0.1;
+        this.moonLight.shadow.camera.far = 50;
+        this.updateSunFrustum();
+        this.scene.add(this.moonLight);
     }
 
     updateSunFrustum() {
@@ -739,6 +912,19 @@ class Game {
     }
 
     buildMaze() {
+        // Calculate maze size for current level
+        if (this.level === 1) {
+            this.mazeSize = this.baseMazeSize; // Level 1: base size (10)
+        } else {
+            const sizeIncrease = Math.floor(this.baseMazeSize * 0.15 * (this.level - 1)); // 15% increase per level
+            this.mazeSize = this.baseMazeSize + sizeIncrease;
+        }
+        
+        // Ensure odd number for proper maze generation
+        if (this.mazeSize % 2 === 0) {
+            this.mazeSize++;
+        }
+        
         this.updateSunFrustum();
         const mazeGen = new Maze(this.mazeSize, this.mazeSize);
         this.grid = mazeGen.generate();
@@ -764,6 +950,31 @@ class Game {
         floor.receiveShadow = true;
         this.scene.add(floor);
 
+        // Random exit position - either on right side or bottom side
+        const exitSide = Math.random() < 0.5 ? 'right' : 'bottom';
+        let exitX, exitZ;
+        
+        if (exitSide === 'right') {
+            // Random position on right side (avoiding corners)
+            exitX = this.mazeSize - 1;
+            exitZ = Math.floor(Math.random() * (this.mazeSize - 4)) + 2; // Between 2 and mazeSize-2
+        } else {
+            // Random position on bottom side (avoiding corners)
+            exitX = Math.floor(Math.random() * (this.mazeSize - 4)) + 2; // Between 2 and mazeSize-2
+            exitZ = this.mazeSize - 1;
+        }
+
+        // Update maze grid for new exit position
+        // Clear the new exit position (make it a passage)
+        this.grid[exitZ][exitX] = 0;
+        
+        // Close the old default exit position (mazeSize-1, mazeSize-2) if it's different
+        const oldExitX = this.mazeSize - 1;
+        const oldExitZ = this.mazeSize - 2;
+        if (oldExitX !== exitX || oldExitZ !== exitZ) {
+            this.grid[oldExitZ][oldExitX] = 1; // Make it a wall
+        }
+
         const emptySpaces = [];
         let torchCount = 0;
         // Dynamic torch limit based on maze size for performance
@@ -773,7 +984,7 @@ class Game {
         let wallCount = 0;
         let decorBrickCount = 0;
         // Reduce decoration density on large maps
-        const decorChance = this.mazeSize > 30 ? 0.7 : 0.3;
+        const decorChance = this.mazeSize > 20 ? 0.7 : 0.3; // Reduced from 30 to 20
         
         for (let y = 0; y < this.mazeSize; y++) {
             for (let x = 0; x < this.mazeSize; x++) {
@@ -784,7 +995,7 @@ class Game {
                     }
                 } else {
                     const isStart = (x === 0 && y === 1);
-                    const isEnd = (x === this.mazeSize - 1 && y === this.mazeSize - 2);
+                    const isEnd = (x === exitX && y === exitZ);
                     if (!isStart && !isEnd) {
                         emptySpaces.push({x, y});
                     }
@@ -839,10 +1050,9 @@ class Game {
             }
         }
 
-        // Find main path from start to end
+        // Find main path from start to exit
         const startPathX = 0, startPathY = 1;
-        const endPathX = this.mazeSize - 1, endPathY = this.mazeSize - 2;
-        const mainPath = findPathBFS(this.grid, this.mazeSize, this.mazeSize, endPathX, endPathY, startPathX, startPathY); // Reverse to get from exit to start
+        const mainPath = findPathBFS(this.grid, this.mazeSize, this.mazeSize, exitX, exitZ, startPathX, startPathY); // Reverse to get from exit to start
         
 
 
@@ -870,20 +1080,29 @@ class Game {
         
         let spaceIdx = 0;
 
-        // 1. Spawn Powerups (Doubled: 2 speed, 2 slow, 1 radar)
-        const powerupTypes = ['speed', 'speed', 'slow', 'slow', 'radar'];
-        for (const type of powerupTypes) {
-            if (spaceIdx < emptySpaces.length) {
-                const s = emptySpaces[spaceIdx++];
-                this.spawnPowerup(s.x, s.y, type);
-            }
+        // 1. Spawn Powerups near the start area
+        const powerupTypes = this.getPowerupTypesForLevel();
+        const powerupPositions = this.selectNearStartPositions(emptySpaces, powerupTypes.length, 5); // Max distance 5 from start
+        for (let i = 0; i < powerupTypes.length && i < powerupPositions.length; i++) {
+            const pos = powerupPositions[i];
+            this.spawnPowerup(pos.x, pos.y, powerupTypes[i]);
         }
 
-        // 2. Spawn Batteries (30% more: ~6-11 per level)
-        const numBatteries = 6 + Math.floor(Math.random() * 6);
-        for (let i = 0; i < numBatteries && spaceIdx < emptySpaces.length; i++) {
-            const s = emptySpaces[spaceIdx++];
-            this.spawnBattery(s.x, s.y);
+        // 2. Spawn Batteries (progressive: 1 on level 1, 2 on level 2, 3 on level 3, 4+ on level 4+)
+        let numBatteries;
+        if (this.level === 1) {
+            numBatteries = 1; // Level 1: minimal batteries
+        } else if (this.level === 2) {
+            numBatteries = 2; // Level 2: few batteries  
+        } else if (this.level === 3) {
+            numBatteries = 3; // Level 3: more batteries
+        } else {
+            numBatteries = 4; // Level 4+: normal amount
+        }
+        
+        const batteryPositions = this.selectDistantPositions(emptySpaces, numBatteries, 4); // Min distance 4
+        for (const pos of batteryPositions) {
+            this.spawnBattery(pos.x, pos.y);
         }
 
         // 3. Spawn Crouch Beams (disjoint from batteries)
@@ -931,42 +1150,38 @@ class Game {
         // Start Door (Closed)
         this.createDoor(-0.4, 1, false);
 
-        // End Door (Open)
-        this.createDoor(this.mazeSize - 1, this.mazeSize - 2, true);
+        // End Door (Open) with green glow
+        this.createDoor(exitX, exitZ, true);
 
-        // Goal zone inside the open door
+        // Goal zone inside the open door with enhanced green glow
         const goalGeometry = new THREE.BoxGeometry(0.2, 1.8, 0.8);
         const goalMaterial = new THREE.MeshPhongMaterial({ 
             color: 0x00ff00, 
             emissive: 0x00ff00,
-            emissiveIntensity: 0.5,
+            emissiveIntensity: 0.8, // Increased glow
             transparent: true,
-            opacity: 0.3
+            opacity: 0.4
         });
         this.goal = new THREE.Mesh(goalGeometry, goalMaterial);
-        this.goal.position.set(this.mazeSize - 1, 0.4, this.mazeSize - 2);
-        // Create keys and doors (1 set per level)
-        // We select the furthest possible space for the key
-        if (emptySpaces.length > 5) {
-            const keySpace = emptySpaces[emptySpaces.length - 1];
-            this.spawnKey(keySpace.x, keySpace.y);
-            emptySpaces.pop(); // Remove it so no battery spawns there
-            
-            // Door is already placed by createDoor at start/end, 
-            // but the test expects "collectible keys and their doors".
-            // The original logic had multiple doors, but let's stick to the test expectation.
-        }
+        this.goal.position.set(exitX, 0.4, exitZ);
+        
+        // Add green point light for better visibility
+        this.goalLight = new THREE.PointLight(0x00ff00, 2, 8);
+        this.goalLight.position.set(exitX, 1.5, exitZ);
+        this.scene.add(this.goalLight);
 
         document.getElementById('level').textContent = this.level;
 
         this.camera.position.set(0, this.baseHeight, 1);
-        this.camera.lookAt(1, this.baseHeight, 1);
+        this.camera.lookAt(2, this.baseHeight, 1); // Смотрим дальше в лабиринт
     }
 
     createDoor(x, z, isOpen) {
         const doorMaterial = new THREE.MeshPhongMaterial({ 
             map: this.textures.floor,
-            color: 0x885533, // Tint to make it look like dark wood if texture is light
+            color: isOpen ? 0x00ff00 : 0x885533, // Green tint for open doors, dark wood for closed
+            emissive: isOpen ? 0x00ff00 : 0x000000, // Green glow for open doors
+            emissiveIntensity: isOpen ? 0.3 : 0,
             shininess: 10
         }); 
         
@@ -1045,31 +1260,149 @@ class Game {
         this.walls.push(mesh);
     }
     
-    spawnPowerup(x, z, type) {
-        const isSpeed = type === 'speed';
-        const isRadar = type === 'radar';
-        const color = isRadar ? 0xff0000 : (isSpeed ? 0x0088ff : 0xffff00);
-        const text = isRadar ? 'RAD' : (isSpeed ? 'SPD' : 'SLW');
-        const cssColor = isRadar ? '#ff0000' : (isSpeed ? '#0088ff' : '#aaaa00');
+    getPowerupTypesForLevel() {
+        const types = [];
         
-        const tex = this.createCoinTexture(text, cssColor);
+        // Level 1: no bonuses at all
+        if (this.level === 1) {
+            // No bonuses - return empty array
+        }
+        // Level 2: very few bonuses (25% chance of 1 bonus)
+        else if (this.level === 2) {
+            const rand = Math.random();
+            if (rand < 0.25) {
+                // Only one type of bonus, equal probability
+                const bonusType = Math.random() < 0.33 ? 'speed' : (Math.random() < 0.5 ? 'slow' : 'radar');
+                types.push(bonusType);
+            }
+        }
+        // Level 3: few bonuses (50% chance of 1-2 bonuses)
+        else if (this.level === 3) {
+            const rand = Math.random();
+            if (rand < 0.5) {
+                // Guaranteed one bonus
+                types.push('speed');
+                // 30% chance of second bonus
+                if (Math.random() < 0.3) {
+                    const secondType = Math.random() < 0.5 ? 'slow' : 'radar';
+                    types.push(secondType);
+                }
+            }
+        }
+        // Level 4+: normal amount (what was previously level 1)
+        else {
+            // This matches the previous "level 1-2" logic
+            const rand = Math.random();
+            if (rand < 0.3) types.push('speed');      // 30% chance
+            else if (rand < 0.5) types.push('slow');  // 20% chance
+            else if (rand < 0.6) types.push('radar');  // 10% chance
+            // 40% chance of no bonuses at all
+        }
         
-        const geo = new THREE.CylinderGeometry(0.25, 0.25, 0.05, 16);
-        const mat = new THREE.MeshPhongMaterial({ 
-            map: tex,
-            color: 0xffffff,
-            emissive: color,
-            emissiveIntensity: 0.8
+        return types;
+    }
+
+    selectDistantPositions(availableSpaces, count, minDistance) {
+        const positions = [];
+        const usedSpaces = [...availableSpaces];
+        
+        for (let i = 0; i < count && usedSpaces.length > 0; i++) {
+            // Pick random position
+            const randomIndex = Math.floor(Math.random() * usedSpaces.length);
+            const selectedPos = usedSpaces[randomIndex];
+            positions.push(selectedPos);
+            
+            // Remove positions that are too close to the selected one
+            usedSpaces.splice(randomIndex, 1);
+            
+            for (let j = usedSpaces.length - 1; j >= 0; j--) {
+                const pos = usedSpaces[j];
+                const distance = Math.sqrt(
+                    Math.pow(pos.x - selectedPos.x, 2) + 
+                    Math.pow(pos.y - selectedPos.y, 2)
+                );
+                
+                if (distance < minDistance) {
+                    usedSpaces.splice(j, 1);
+                }
+            }
+        }
+        
+        return positions;
+    }
+
+    selectNearStartPositions(availableSpaces, count, maxDistance) {
+        const positions = [];
+        const startX = 0, startZ = 1; // Start position
+        
+        // Filter spaces that are within maxDistance from start
+        const nearStartSpaces = availableSpaces.filter(space => {
+            const distance = Math.sqrt(
+                Math.pow(space.x - startX, 2) + 
+                Math.pow(space.y - startZ, 2)
+            );
+            return distance <= maxDistance;
         });
         
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.rotation.x = Math.PI / 2; // Lay the coin flat (horizontal)
-        mesh.position.set(x, 0.5, z);
-
-        mesh.userData = { type: type, isCoin: true };
+        // Shuffle the near-start spaces
+        nearStartSpaces.sort(() => Math.random() - 0.5);
         
-        this.scene.add(mesh);
-        this.powerups.push(mesh);
+        // Take the first 'count' positions (or fewer if not enough spaces)
+        for (let i = 0; i < count && i < nearStartSpaces.length; i++) {
+            positions.push(nearStartSpaces[i]);
+        }
+        
+        return positions;
+    }
+
+    spawnPowerup(x, z, type) {
+        // Create icon-only sprite (no text)
+        const iconSprite = this.createPowerupIcon(type);
+        
+        // Use Sprite for billboard effect (always faces camera)
+        const material = new THREE.SpriteMaterial({ 
+            map: iconSprite,
+            transparent: true,
+            alphaTest: 0.1,
+            fog: false
+        });
+        
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(0.8, 0.8, 1); // Size of the icon
+        sprite.position.set(x, 0.8, z); // Slightly above ground
+        
+        // Create text label below icon
+        const labelText = this.getPowerupLabelText(type);
+        const textSprite = this.createPowerupText(labelText);
+        const textMaterial = new THREE.SpriteMaterial({ 
+            map: textSprite,
+            transparent: true,
+            alphaTest: 0.1,
+            fog: false
+        });
+        
+        const textSpriteObj = new THREE.Sprite(textMaterial);
+        textSpriteObj.scale.set(1.2, 0.3, 1); // Text size
+        textSpriteObj.position.set(x, 0.4, z); // Below the icon
+        
+        // Create group for icon + text
+        const group = new THREE.Group();
+        group.add(sprite);
+        group.add(textSpriteObj);
+        group.position.set(x, 0, z);
+        
+        // Store rotation animation data
+        sprite.userData = { 
+            type: type, 
+            isPowerup: true,
+            rotationOffset: Math.random() * Math.PI * 2, // Random starting rotation
+            lastRotationTime: 0
+        };
+        
+        group.userData = { type: type, isPowerupGroup: true };
+        
+        this.scene.add(group);
+        this.powerups.push(group);
     }
 
     spawnBattery(x, z) {
@@ -1103,6 +1436,123 @@ class Game {
 
         this.scene.add(group);
         this.batteries.push(group);
+    }
+
+    getPowerupLabelText(type) {
+        const labels = {
+            'speed': 'Speed Boost',
+            'slow': 'Slow Monster',
+            'radar': 'Monster Tracker'
+        };
+        return labels[type] || 'Powerup';
+    }
+
+    createPowerupText(text) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, 256, 64);
+        
+        // Border
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(1, 1, 254, 62);
+        
+        // Text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 18px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 128, 32);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        return texture;
+    }
+
+    createPowerupIcon(type) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // Background circle
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(64, 64, 56, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Colored border
+        const colors = {
+            'speed': '#0088ff',
+            'slow': '#ffff00', 
+            'radar': '#ff0000'
+        };
+        
+        ctx.strokeStyle = colors[type] || '#888888';
+        ctx.lineWidth = 8;
+        ctx.stroke();
+        
+        // Draw icon based on type
+        ctx.fillStyle = colors[type] || '#888888';
+        ctx.strokeStyle = colors[type] || '#888888';
+        ctx.lineWidth = 4;
+        
+        switch(type) {
+            case 'speed':
+                // Lightning bolt icon
+                ctx.beginPath();
+                ctx.moveTo(40, 30);
+                ctx.lineTo(55, 50);
+                ctx.lineTo(50, 50);
+                ctx.lineTo(88, 98);
+                ctx.lineTo(73, 78);
+                ctx.lineTo(78, 78);
+                ctx.closePath();
+                ctx.fill();
+                break;
+                
+            case 'slow':
+                // Clock/slow icon
+                ctx.beginPath();
+                ctx.arc(64, 64, 25, 0, Math.PI * 1.5);
+                ctx.stroke();
+                // Clock hands
+                ctx.beginPath();
+                ctx.moveTo(64, 64);
+                ctx.lineTo(64, 45);
+                ctx.moveTo(64, 64);
+                ctx.lineTo(80, 64);
+                ctx.stroke();
+                break;
+                
+            case 'radar':
+                // Radar/pulse icon
+                ctx.beginPath();
+                ctx.arc(64, 64, 15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(64, 64, 25, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(64, 64, 35, 0, Math.PI * 2);
+                ctx.stroke();
+                // Pulse lines
+                for(let i = 0; i < 4; i++) {
+                    const angle = (i * Math.PI / 2) + Math.PI / 4;
+                    ctx.beginPath();
+                    ctx.moveTo(64 + Math.cos(angle) * 15, 64 + Math.sin(angle) * 15);
+                    ctx.lineTo(64 + Math.cos(angle) * 35, 64 + Math.sin(angle) * 35);
+                    ctx.stroke();
+                }
+                break;
+        }
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        return texture;
     }
 
     createCoinTexture(text, colorStr) {
@@ -1146,42 +1596,6 @@ createObstacle(x, y, material, type) {
         this.scene.add(mesh);
         this.walls.push(mesh);
     }
-
-    spawnKey(x, z) {
-        const group = new THREE.Group();
-        
-        // Key Head (Ring)
-        const ringGeo = new THREE.TorusGeometry(0.1, 0.03, 8, 16);
-        const goldMat = new THREE.MeshPhongMaterial({ 
-            color: 0xffcc00, 
-            shininess: 100,
-            emissive: 0x443300
-        });
-        const ring = new THREE.Mesh(ringGeo, goldMat);
-        ring.rotation.y = Math.PI / 2;
-        group.add(ring);
-        
-        // Key Shaft
-        const shaftGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.3);
-        const shaft = new THREE.Mesh(shaftGeo, goldMat);
-        shaft.position.y = -0.15;
-        group.add(shaft);
-        
-        // Key Teeth
-        const teethGeo = new THREE.BoxGeometry(0.1, 0.05, 0.02);
-        const teeth = new THREE.Mesh(teethGeo, goldMat);
-        teeth.position.set(0.05, -0.25, 0);
-        group.add(teeth);
-        
-        group.position.set(x, 0.5, z);
-        group.rotation.x = Math.PI / 4; // Lean it slightly
-        
-        group.userData = { type: 'key', isKey: true };
-        this.scene.add(group);
-        // We reuse powerups array for collection logic if it doesn't have its own
-        this.powerups.push(group);
-    }
-
 
     spawnCrouchBeam(x, z) {
         // We clone the texture to adjust its UV mapping specifically for the beam
@@ -1248,6 +1662,13 @@ createObstacle(x, y, material, type) {
                 this.toggleMute();
                 break;
             case 'KeyF':
+                // Hide flashlight hint if it's visible
+                const hint = document.getElementById('flashlight-hint');
+                if (hint && hint.style.display !== 'none') {
+                    hint.style.display = 'none';
+                    hint.classList.remove('show', 'fade-out');
+                }
+                
                 // Debounce to prevent multiple rapid toggles
                 const now = performance.now();
                 if (now - this.flashlightDebounceTime < this.flashlightDebounceDelay) {
@@ -1421,7 +1842,7 @@ createObstacle(x, y, material, type) {
             }
 
         // Adaptive quality system for large maps
-        if (this.mazeSize > 30) {
+        if (this.mazeSize > 25) { // Reduced threshold from 30 to account for smaller base size
             // Dynamic quality adjustment based on FPS (fps variable already available from counter above)
             if (this.fpsElement) {
                 const currentFPS = parseInt(this.fpsElement.textContent.replace('FPS: ', ''));
@@ -1484,15 +1905,22 @@ createObstacle(x, y, material, type) {
             }
         }
 
-        // Battery depletion logic (paused when menu is open / controls unlocked)
-        if (this.controls.isLocked && !this.isGameOver && this.flashlight && this.flashlight.visible) {
-            const depletionRate = 3; // 3% per second
-            this.batteryLevel -= depletionRate * delta;
-            
-            if (this.batteryLevel <= 0) {
-                this.batteryLevel = 0;
-                this.flashlight.visible = false;
-                if (this.flashlightHalo) this.flashlightHalo.visible = false;
+        // Battery logic (paused when menu is open / controls unlocked)
+        if (this.controls.isLocked && !this.isGameOver) {
+            if (this.flashlight && this.flashlight.visible) {
+                // Depletion when flashlight is on
+                const depletionRate = 3; // 3% per second
+                this.batteryLevel -= depletionRate * delta;
+                
+                if (this.batteryLevel <= 0) {
+                    this.batteryLevel = 0;
+                    this.flashlight.visible = false;
+                    if (this.flashlightHalo) this.flashlightHalo.visible = false;
+                }
+            } else if (this.batteryLevel < 100) {
+                // Regeneration when flashlight is off
+                const regenerationRate = 0.5; // 0.5% per second
+                this.batteryLevel = Math.min(100, this.batteryLevel + regenerationRate * delta);
             }
             
             // Update UI
@@ -1546,17 +1974,48 @@ createObstacle(x, y, material, type) {
 
 
             if (this.startTime && !this.monsterSpawned) {
+                // Timer starts immediately with level-based delay
                 const elapsed = Date.now() - this.startTime;
-                if (elapsed > 10000) {
+                const spawnConditionMet = elapsed > this.monsterSpawnDelay;
+                const timeUntilSpawn = Math.max(0, (this.monsterSpawnDelay - elapsed) / 1000);
+                
+                const countdownElement = document.getElementById('monster-countdown');
+                const numberElement = countdownElement.querySelector('.countdown-number');
+                const textElement = countdownElement.querySelector('.countdown-text');
+                
+                if (spawnConditionMet) {
                     this.spawnMonster();
-                    document.getElementById('monster-timer').textContent = "Active!";
+                    // Show "RUN" message
+                    numberElement.textContent = "RUN";
+                    numberElement.className = "countdown-number run";
+                    textElement.textContent = "MONSTER IS HERE";
+                    
+                    // Hide after 3 seconds
+                    setTimeout(() => {
+                        countdownElement.style.display = 'none';
+                    }, 3000);
                 } else {
-                    document.getElementById('monster-timer').textContent = ((10000 - elapsed) / 1000).toFixed(1) + "s";
+                    // Show countdown
+                    countdownElement.style.display = 'block';
+                    const displayTime = Math.ceil(timeUntilSpawn);
+                    numberElement.textContent = displayTime;
+                    
+                    // Add warning classes based on time remaining
+                    numberElement.className = "countdown-number";
+                    if (timeUntilSpawn <= 2) {
+                        numberElement.classList.add("danger"); // Red, fast pulse
+                    } else if (timeUntilSpawn <= 5) {
+                        numberElement.classList.add("warning"); // Yellow, medium pulse
+                    }
                 }
             } else if (this.monsterSpawned) {
-                document.getElementById('monster-timer').textContent = "Active!";
+                // Hide countdown if monster is already spawned
+                const countdownElement = document.getElementById('monster-countdown');
+                countdownElement.style.display = 'none';
             } else {
-                document.getElementById('monster-timer').textContent = "10.0s";
+                // Initial state before game starts
+                const countdownElement = document.getElementById('monster-countdown');
+                countdownElement.style.display = 'none';
             }
 
             if (this.monsterSpawned) {
@@ -1637,9 +2096,33 @@ createObstacle(x, y, material, type) {
             // --- POWERUP LOGIC ---
             for (let i = this.powerups.length - 1; i >= 0; i--) {
                 const powerup = this.powerups[i];
-                if (powerup.userData.isCoin) {
-                    powerup.rotation.y += delta * 2; // Spin coins
+                
+                // Handle both old sprites and new groups
+                let targetSprite = null;
+                if (powerup.userData.isPowerupGroup) {
+                    // New format: group with icon sprite as first child
+                    targetSprite = powerup.children[0];
+                } else if (powerup.userData.isPowerup) {
+                    // Old format: direct sprite
+                    targetSprite = powerup;
                 }
+                
+                // Horizontal rotation animation for sprites
+                if (targetSprite && targetSprite.userData.isPowerup) {
+                    const currentTime = performance.now();
+                    const timeDiff = (currentTime - (targetSprite.userData.lastRotationTime || 0)) / 1000;
+                    targetSprite.userData.lastRotationTime = currentTime;
+                    
+                    // Gentle horizontal rotation
+                    const rotationSpeed = 1.5; // radians per second
+                    targetSprite.userData.rotationOffset += rotationSpeed * timeDiff;
+                    
+                    // Apply rotation to sprite material (creates horizontal spin effect)
+                    const rotationAmount = Math.sin(targetSprite.userData.rotationOffset) * 0.3;
+                    targetSprite.material.rotation = rotationAmount;
+                }
+                
+                // Collection logic
                 if (this.camera.position.distanceTo(powerup.position) < 0.8) {
                     this.scene.remove(powerup);
                     this.powerups.splice(i, 1);
@@ -1741,18 +2224,42 @@ createObstacle(x, y, material, type) {
         this.monsterTargetPosition = null;
         this.lastPathUpdateTime = 0;
         
-        // Start sound with smooth fade-in
-        if (this.monsterSound) {
-            if (this.monsterSound.context.state === 'suspended') {
-                this.monsterSound.context.resume();
-            }
-            if (!this.monsterSound.isPlaying) {
-                this.playAudioSafely(this.monsterSound, 'monster');
-            }
-            // Start from silence and fade up to base volume
-            this.monsterVolume = 0;
-            this.monsterVolumeTarget = this.monsterBaseVolume;
+        // Reset crouch animation state
+        this.monsterCrouchHeight = 0;
+        this.monsterTargetCrouchHeight = 0;
+        
+        // Pre-calculate initial path to avoid first-frame lag
+        const currentCellX = Math.floor(this.monster.position.x + 0.5);
+        const currentCellZ = Math.floor(this.monster.position.z + 0.5);
+        const playerCellX = Math.floor(this.camera.position.x + 0.5);
+        const playerCellZ = Math.floor(this.camera.position.z + 0.5);
+        
+        const initialPath = findPathBFS(
+            this.grid, this.mazeSize, this.mazeSize,
+            currentCellX, currentCellZ,
+            playerCellX, playerCellZ,
+            true // isMonster
+        );
+        
+        if (initialPath.length > 0) {
+            this.monsterPath = initialPath;
+            this.updateMonsterTarget();
         }
+        
+        // Stagger audio operations to reduce frame spike
+        setTimeout(() => {
+            if (this.monsterSound) {
+                if (this.monsterSound.context.state === 'suspended') {
+                    this.monsterSound.context.resume();
+                }
+                if (!this.monsterSound.isPlaying) {
+                    this.playAudioSafely(this.monsterSound, 'monster');
+                }
+                // Start from silence and fade up to base volume
+                this.monsterVolume = 0;
+                this.monsterVolumeTarget = this.monsterBaseVolume;
+            }
+        }, 100); // Delay audio by 100ms to spread the load
         
         this.monsterSpawned = true;
     }
@@ -2194,75 +2701,124 @@ createObstacle(x, y, material, type) {
         this.updateMonsterPerformance();
         
         const timeOffset = Date.now() / 200;
-        this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1;
+        
+        // Night-time lowering effect - monster crouches slightly during darker levels
+        const nightLowering = this.level > 2 ? 0.1 : 0; // Lower more on darker levels
+        
+        // Check if monster needs to crouch for upcoming obstacles
+        const needsToCrouch = this.checkMonsterCrouchNeed();
+        this.monsterTargetCrouchHeight = needsToCrouch ? 0.25 : 0; // Crouch down by 0.25 units
+        
+        // Smooth crouch animation
+        if (Math.abs(this.monsterCrouchHeight - this.monsterTargetCrouchHeight) > 0.01) {
+            const crouchDiff = this.monsterTargetCrouchHeight - this.monsterCrouchHeight;
+            this.monsterCrouchHeight += crouchDiff * this.monsterCrouchSpeed * delta;
+        } else {
+            this.monsterCrouchHeight = this.monsterTargetCrouchHeight;
+        }
+        
+        // Apply all height effects
+        this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1 - nightLowering - this.monsterCrouchHeight;
 
         // Pulsating effect (slight scale variation) - DISABLED
         // const pulseScale = 1.0 + Math.sin(Date.now() / 500) * 0.05;
         // this.monster.scale.set(pulseScale, pulseScale, pulseScale);
-        this.monster.scale.set(1.0, 1.0, 1.0);
+        
+        // Slight scale adjustment when crouching for visual feedback
+        const crouchScale = 1.0 - (this.monsterCrouchHeight * 0.15); // Slightly smaller when crouched
+        this.monster.scale.set(crouchScale, 1.0, crouchScale);
 
-        const currentCellX = Math.floor(this.monster.position.x + 0.5);
-        const currentCellZ = Math.floor(this.monster.position.z + 0.5);
+        // Direct movement towards player with obstacle avoidance
+        const dx = this.camera.position.x - this.monster.position.x;
+        const dz = this.camera.position.z - this.monster.position.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
         
-        const playerCellX = Math.floor(this.camera.position.x + 0.5);
-        const playerCellZ = Math.floor(this.camera.position.z + 0.5);
-        
-        // Throttle expensive BFS to every 800ms
-        const now = performance.now();
-        if (now - this.lastPathUpdateTime > this.pathUpdateIntervalMs) {
-            const newPath = findPathBFS(
-                this.grid, this.mazeSize, this.mazeSize,
-                currentCellX, currentCellZ,
-                playerCellX, playerCellZ
+        if (dist > 0.05) {
+            // Check if there's a clear line of sight
+            const hasLineOfSight = this.checkLineOfSight(
+                this.monster.position.x, 
+                this.monster.position.z,
+                this.camera.position.x, 
+                this.camera.position.z
             );
             
-            // Only update path if it's significantly different or we don't have one
-            if (newPath.length > 0 && !this.pathsAreEqual(this.monsterPath, newPath)) {
-                this.monsterPath = newPath;
-                this.currentPathIndex = 0;
-                this.updateMonsterTarget();
-            }
-            this.lastPathUpdateTime = now;
-        }
-        
-        // Move towards current target position
-        if (this.monsterTargetPosition) {
-            const dx = this.monsterTargetPosition.x - this.monster.position.x;
-            const dz = this.monsterTargetPosition.z - this.monster.position.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
+            let targetX, targetZ;
             
-            if (dist > 0.05) {
-                // Smooth movement with proper delta time scaling
-                const moveX = (dx / dist) * this.monsterSpeed * delta;
-                const moveZ = (dz / dist) * this.monsterSpeed * delta;
-                this.monster.position.x += moveX;
-                this.monster.position.z += moveZ;
-
-                // Smooth rotation towards movement direction
-                const angle = Math.atan2(dx, dz);
-                const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                this.monster.quaternion.slerp(targetRotation, 0.15); // Increased for smoother rotation
+            if (hasLineOfSight) {
+                // Direct line of sight - move straight to player
+                targetX = this.camera.position.x;
+                targetZ = this.camera.position.z;
             } else {
-                // Reached current target, move to next waypoint
-                this.currentPathIndex++;
-                this.updateMonsterTarget();
+                // No line of sight - use pathfinding but update more frequently
+                const now = performance.now();
+                if (now - this.lastPathUpdateTime > 400) { // Reduced from 800ms for more responsive movement
+                    const currentCellX = Math.floor(this.monster.position.x + 0.5);
+                    const currentCellZ = Math.floor(this.monster.position.z + 0.5);
+                    const playerCellX = Math.floor(this.camera.position.x + 0.5);
+                    const playerCellZ = Math.floor(this.camera.position.z + 0.5);
+                    
+                    const newPath = findPathBFS(
+                        this.grid, this.mazeSize, this.mazeSize,
+                        currentCellX, currentCellZ,
+                        playerCellX, playerCellZ,
+                        true // isMonster
+                    );
+                    
+                    if (newPath.length > 0) {
+                        this.monsterPath = newPath;
+                        this.currentPathIndex = 0;
+                        this.updateMonsterTarget();
+                    }
+                    this.lastPathUpdateTime = now;
+                }
+                
+                // Use pathfinding target
+                if (this.monsterTargetPosition) {
+                    targetX = this.monsterTargetPosition.x;
+                    targetZ = this.monsterTargetPosition.z;
+                    
+                    // Check if we reached the current waypoint
+                    const waypointDx = targetX - this.monster.position.x;
+                    const waypointDz = targetZ - this.monster.position.z;
+                    const waypointDist = Math.sqrt(waypointDx * waypointDx + waypointDz * waypointDz);
+                    
+                    if (waypointDist < 0.1) {
+                        this.currentPathIndex++;
+                        this.updateMonsterTarget();
+                    }
+                } else {
+                    // Fallback to direct movement
+                    targetX = this.camera.position.x;
+                    targetZ = this.camera.position.z;
+                }
             }
-        } else {
-            // Direct line of sight fallback or close proximity
-            const dx = this.camera.position.x - this.monster.position.x;
-            const dz = this.camera.position.z - this.monster.position.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
             
-            if (dist > 0.05) {
-                const moveX = (dx / dist) * this.monsterSpeed * delta;
-                const moveZ = (dz / dist) * this.monsterSpeed * delta;
-                this.monster.position.x += moveX;
-                this.monster.position.z += moveZ;
-
-                // Smooth rotation
-                const angle = Math.atan2(dx, dz);
-                const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                this.monster.quaternion.slerp(targetRotation, 0.15);
+            // Smooth movement towards target
+            const moveDx = targetX - this.monster.position.x;
+            const moveDz = targetZ - this.monster.position.z;
+            const moveDist = Math.sqrt(moveDx * moveDx + moveDz * moveDz);
+            
+            if (moveDist > 0.05) {
+                const moveX = (moveDx / moveDist) * this.monsterSpeed * delta;
+                const moveZ = (moveDz / moveDist) * this.monsterSpeed * delta;
+                
+                // Check if new position would be valid (not in wall, but allow crouch beams)
+                const newX = this.monster.position.x + moveX;
+                const newZ = this.monster.position.z + moveZ;
+                const cellX = Math.floor(newX + 0.5);
+                const cellZ = Math.floor(newZ + 0.5);
+                
+                // Monster can pass through crouch beams (type 4) but not regular walls (type 1)
+                if (cellX >= 0 && cellX < this.mazeSize && cellZ >= 0 && cellZ < this.mazeSize && 
+                    (this.grid[cellZ][cellX] === 0 || this.grid[cellZ][cellX] === 4)) {
+                    this.monster.position.x = newX;
+                    this.monster.position.z = newZ;
+                    
+                    // Smooth rotation towards movement direction
+                    const angle = Math.atan2(moveDx, moveDz);
+                    const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+                    this.monster.quaternion.slerp(targetRotation, 0.15);
+                }
             }
         }
 
@@ -2270,6 +2826,114 @@ createObstacle(x, y, material, type) {
         const distToPlayer = this.camera.position.distanceTo(this.monster.position);
         if (distToPlayer < 0.6) {
             this.handleGameOver();
+        }
+    }
+    
+    // Get monster spawn delay based on level (10s → 9s → 8s → 7s → 6s → 5s → 5s...)
+    getMonsterSpawnDelay() {
+        const delays = [10000, 9000, 8000, 7000, 6000, 5000]; // Levels 1-6
+        if (this.level <= 6) {
+            return delays[this.level - 1];
+        }
+        return 5000; // Level 7+ stays at 5 seconds
+    }
+    
+    // Check if player has moved 2 cells from start position (0, 1)
+    checkPlayerLeftStartArea() {
+        const playerX = this.camera.position.x;
+        const playerZ = this.camera.position.z;
+        const startX = 0;
+        const startZ = 1;
+        
+        // Calculate distance from start position
+        const distance = Math.sqrt(
+            Math.pow(playerX - startX, 2) + 
+            Math.pow(playerZ - startZ, 2)
+        );
+        
+        // Check if player is at least 2 cells away (2 units distance)
+        if (distance >= 2.0 && !this.playerLeftStartArea) {
+            this.playerLeftStartArea = true;
+            this.leftStartTime = Date.now();
+            return true;
+        }
+        
+        return false;
+    }
+    
+    // Check if monster needs to crouch for upcoming obstacles
+    checkMonsterCrouchNeed() {
+        const checkDistance = 1.5; // Check 1.5 units ahead
+        const monsterX = this.monster.position.x;
+        const monsterZ = this.monster.position.z;
+        
+        // Get movement direction
+        const dx = this.camera.position.x - monsterX;
+        const dz = this.camera.position.z - monsterZ;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        if (dist < 0.01) return false; // Not moving
+        
+        // Normalize direction
+        const dirX = (dx / dist) * checkDistance;
+        const dirZ = (dz / dist) * checkDistance;
+        
+        // Check positions along the movement path
+        const checkPoints = [
+            {x: monsterX + dirX * 0.5, z: monsterZ + dirZ * 0.5}, // Close check
+            {x: monsterX + dirX, z: monsterZ + dirZ}, // Medium check  
+            {x: monsterX + dirX * 1.5, z: monsterZ + dirZ * 1.5} // Far check
+        ];
+        
+        for (const point of checkPoints) {
+            const cellX = Math.floor(point.x + 0.5);
+            const cellZ = Math.floor(point.z + 0.5);
+            
+            if (cellX >= 0 && cellX < this.mazeSize && cellZ >= 0 && cellZ < this.mazeSize) {
+                if (this.grid[cellZ][cellX] === 4) {
+                    return true; // Crouch beam detected ahead
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    // Check if there's a clear line of sight between two points
+    checkLineOfSight(x1, z1, x2, z2) {
+        const dx = Math.abs(x2 - x1);
+        const dz = Math.abs(z2 - z1);
+        const sx = x1 < x2 ? 1 : -1;
+        const sz = z1 < z2 ? 1 : -1;
+        let err = dx - dz;
+        let x = Math.floor(x1);
+        let z = Math.floor(z1);
+        
+        while (true) {
+            // Check current position
+            if (x >= 0 && x < this.mazeSize && z >= 0 && z < this.mazeSize) {
+                // Monster can see through crouch beams (type 4) but not regular walls (type 1)
+                if (this.grid[z][x] === 1) {
+                    return false; // Wall blocks line of sight
+                }
+            } else {
+                return false; // Out of bounds
+            }
+            
+            // Check if we reached the target
+            if (Math.floor(x2) === x && Math.floor(z2) === z) {
+                return true;
+            }
+            
+            const e2 = 2 * err;
+            if (e2 > -dz) {
+                err -= dz;
+                x += sx;
+            }
+            if (e2 < dx) {
+                err += dx;
+                z += sz;
+            }
         }
     }
     
@@ -2302,13 +2966,10 @@ createObstacle(x, y, material, type) {
 
         // Reset Game state without instantly restarting
         this.level = 1; 
-        this.mazeSize = 18; // Reduced by 10% more from 20 
-        this.playerKeys = 0;
+        this.mazeSize = this.baseMazeSize; // Reset to base size
         this.slowPowerupRemaining = 0;
         this.monsterSpeed = this.baseMonsterSpeed;
         
-        const keysEl = document.getElementById('keys');
-        if (keysEl) keysEl.innerText = this.playerKeys;
         document.getElementById('monster-timer').textContent = "5.0s";
         document.getElementById('timer').textContent = "00:00";
         document.getElementById('bonus-indicator').style.display = 'none';
@@ -2452,7 +3113,7 @@ createObstacle(x, y, material, type) {
     nextLevel() {
         try {
             this.level++;
-            this.mazeSize += 2; // Increment by 2 to maintain odd grid size for proper maze generation
+            
             this.startTime = Date.now();
             
             // Don't null out this.monster — it's permanently in scene, just hide it
@@ -2464,7 +3125,13 @@ createObstacle(x, y, material, type) {
                 this.monsterSpawned = false;
             }
             
+            // Reset spawn conditions for new level
+            this.playerLeftStartArea = false;
+            this.leftStartTime = null;
+            this.monsterSpawnDelay = this.getMonsterSpawnDelay(); // Update delay for new level
+            
             this.clearMaze();
+            this.updateLighting();
             this.buildMaze();
         } catch (error) {
             console.error('Error in nextLevel():', error);
@@ -2550,10 +3217,6 @@ createObstacle(x, y, material, type) {
             if (this.monsterTrackerBeam) {
                 this.monsterTrackerBeam.visible = true;
             }
-        } else if (type === 'key') {
-            this.playerKeys++;
-            const keysEl = document.getElementById('keys');
-            if (keysEl) keysEl.innerText = this.playerKeys;
         }
     }
 }
