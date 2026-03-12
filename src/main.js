@@ -638,55 +638,73 @@ class Game {
     }
 
     clearMaze() {
-        // Remove all objects except camera and sky
-        const toRemove = [];
-        this.scene.traverse((object) => {
-            if (object !== this.scene && 
-                object !== this.camera && 
-                object !== this.sky && 
-                object !== this.moon &&         // Never delete the moon
-                object !== this.cloudSphere &&  // Never delete the cloud layer
-                object !== this.stars &&         // Never delete the starfield
-                object !== this.moonLight &&
-                object !== this.sunLight && 
-                object !== this.monster &&      // Never remove the monster
-                object !== this.monsterSound && // Keep monster's heart beating
-                object !== this.monsterLight && // Keep monster's glow
-                object !== this.playerLight &&  // Keep player's hand-held torch
-                object !== this.flashlight &&     // Never delete the flashlight
-                object !== this.flashlightHalo && // Never delete the flashlight halo
-                object !== this.flashlightTarget && // Never delete the flashlight target
-                !object.isAmbientLight) {
-                toRemove.push(object);
-            }
-        });
-
-        toRemove.forEach(obj => {
-            if (obj.parent) obj.parent.remove(obj);
-            if (obj.geometry) obj.geometry.dispose();
-            if (obj.material) {
-                if (Array.isArray(obj.material)) {
-                    obj.material.forEach(m => m.dispose());
-                } else {
-                    obj.material.dispose();
+        try {
+            // Remove all objects except camera and sky
+            const toRemove = [];
+            this.scene.traverse((object) => {
+                if (object !== this.scene && 
+                    object !== this.camera && 
+                    object !== this.sky && 
+                    object !== this.moon &&         // Never delete the moon
+                    object !== this.cloudSphere &&  // Never delete the cloud layer
+                    object !== this.stars &&         // Never delete the starfield
+                    object !== this.moonLight &&
+                    object !== this.monster &&      // Never remove the monster
+                    object !== this.monsterSound && // Keep monster's heart beating
+                    object !== this.monsterLight && // Keep monster's glow
+                    object !== this.flashlight &&     // Never delete the flashlight
+                    object !== this.flashlightHalo && // Never delete the flashlight halo
+                    object !== this.flashlightTarget && // Never delete the flashlight target
+                    !object.isAmbientLight) {
+                    toRemove.push(object);
                 }
-            }
-        });
+            });
 
-        this.walls = [];
-        this.powerups = [];
-        this.keys = [];
-        this.lockedDoors = [];
-        this.crouchBeams = [];
-        this.goal = null;
-        this.torchLights = [];
-        
-        // Stop torch fire sounds
-        this.torchLights.forEach(torch => {
-            if (torch.fireSound && torch.fireSound.isPlaying) {
-                torch.fireSound.stop();
-            }
-        });
+            toRemove.forEach(obj => {
+                try {
+                    if (obj.parent) obj.parent.remove(obj);
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(m => m.dispose());
+                        } else {
+                            obj.material.dispose();
+                        }
+                    }
+                } catch (error) {
+                    console.warn('Error disposing object:', error);
+                }
+            });
+
+            // Stop torch fire sounds BEFORE clearing the array
+            this.torchLights.forEach(torch => {
+                try {
+                    if (torch.fireSound && torch.fireSound.isPlaying) {
+                        torch.fireSound.stop();
+                    }
+                } catch (error) {
+                    console.warn('Error stopping torch sound:', error);
+                }
+            });
+
+            this.walls = [];
+            this.powerups = [];
+            this.keys = [];
+            this.lockedDoors = [];
+            this.crouchBeams = [];
+            this.goal = null;
+            this.torchLights = [];
+        } catch (error) {
+            console.error('Error in clearMaze():', error);
+            // Reset arrays even if disposal fails
+            this.walls = [];
+            this.powerups = [];
+            this.keys = [];
+            this.lockedDoors = [];
+            this.crouchBeams = [];
+            this.goal = null;
+            this.torchLights = [];
+        }
     }
 
     updateSunFrustum() {
@@ -2364,21 +2382,30 @@ createObstacle(x, y, material, type) {
     }
 
     nextLevel() {
-        this.level++;
-        this.mazeSize += 1.4; // Reduced increment (10% smaller progression)
-        this.startTime = Date.now();
-        
-        // Don't null out this.monster — it's permanently in scene, just hide it
-        if (this.monsterSpawned) {
-            if (this.monsterSound && this.monsterSound.isPlaying) {
-                this.monsterSound.stop();
+        try {
+            this.level++;
+            this.mazeSize += 2; // Increment by 2 to maintain odd grid size for proper maze generation
+            this.startTime = Date.now();
+            
+            // Don't null out this.monster — it's permanently in scene, just hide it
+            if (this.monsterSpawned) {
+                if (this.monsterSound && this.monsterSound.isPlaying) {
+                    this.monsterSound.stop();
+                }
+                this.monster.visible = false;
+                this.monsterSpawned = false;
             }
-            this.monster.visible = false;
-            this.monsterSpawned = false;
+            
+            this.clearMaze();
+            this.buildMaze();
+        } catch (error) {
+            console.error('Error in nextLevel():', error);
+            // Fallback: reload the page if level transition fails
+            setTimeout(() => {
+                alert('Level transition failed. Reloading game...');
+                location.reload();
+            }, 1000);
         }
-        
-        this.clearMaze();
-        this.buildMaze();
     }
 
     toggleMenu() {
