@@ -424,7 +424,9 @@ class Game {
         });
 
         startBtn.addEventListener('click', startGame);
-        restartBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', () => {
+            location.reload();
+        });
         
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Enter' && !this.controls.isLocked) {
