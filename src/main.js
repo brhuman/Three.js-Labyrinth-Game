@@ -108,8 +108,8 @@ class Game {
 
         this.isFullscreenToggling = false;
         this.gameStarted = false;
-        this.isPaused = false;
-        this.menuBackgroundMusic = null;
+        this.pauseTime = null;
+        this.totalPausedDuration = 0;
 
         this.init();
 
@@ -314,34 +314,41 @@ class Game {
             if (!this.gameStarted) {
                 this.gameStarted = true;
                 startBtn.innerText = "CONTINUE";
+                this.startTime = Date.now();
+            } else if (this.isPaused) {
+                // Just resume, don't reset anything
+                this.isPaused = false;
+                this.controls.lock();
+                return;
             }
-            const fowToggle = document.getElementById('fow-toggle');
 
+            const fowToggle = document.getElementById('fow-toggle');
             this.useFogOfWar = fowToggle ? fowToggle.checked : true;
             
             document.getElementById('game-over').style.display = 'none';
-            this.isGameOver = false; // Add reset here
+            this.isGameOver = false;
             
-            // If monster is hanging around from death, reset it
-            if (this.monsterSpawned) {
-                this.monster.visible = false;
-                this.monsterSpawned = false;
-                this.monster.position.set(0, 0.5, 1);
-                this.monsterVolume = 0;
-                this.monsterVolumeTarget = 0;
-            }
-            // Reset monster timer for new game
-            this.startTime = Date.now();
-            // Always stop monster sound when restarting — it may have been playing during death screen
-            if (this.monsterSound && this.monsterSound.isPlaying) {
-                this.monsterSound.stop();
-            }
-            
-            // Reset fog if FoW is disabled
-            if (!this.useFogOfWar) {
-                for (let y = 0; y < this.mazeSize; y++) {
-                    for (let x = 0; x < this.mazeSize; x++) {
-                        this.explorationGrid[y][x] = true;
+            // Initial game start setup or level restart
+            // (Timer and monster reset only if NOT resuming from pause)
+            if (!this.isPaused) {
+                if (this.monsterSpawned) {
+                    this.monster.visible = false;
+                    this.monsterSpawned = false;
+                    this.monster.position.set(0, 0.5, 1);
+                    this.monsterVolume = 0;
+                    this.monsterVolumeTarget = 0;
+                }
+                
+                if (this.monsterSound && this.monsterSound.isPlaying) {
+                    this.monsterSound.stop();
+                }
+
+                // Reset fog if FoW is disabled
+                if (!this.useFogOfWar) {
+                    for (let y = 0; y < this.mazeSize; y++) {
+                        for (let x = 0; x < this.mazeSize; x++) {
+                            this.explorationGrid[y][x] = true;
+                        }
                     }
                 }
             }
@@ -432,13 +439,21 @@ class Game {
             document.getElementById('game-over').style.display = 'none';
             document.getElementById('hud').style.display = 'flex';
             document.getElementById('crosshair').style.display = 'block';
-            this.startTime = Date.now(); // Always reset start time when locking into a run
+            
+            // Resume timer by adjusting startTime for the paused duration
+            if (this.pauseTime) {
+                const pausedFor = Date.now() - this.pauseTime;
+                this.startTime += pausedFor;
+                this.pauseTime = null;
+            }
         });
 
         this.controls.addEventListener('unlock', () => {
             // Only show menu if not game over and NOT toggling fullscreen
             if (!this.isGameOver && !this.isFullscreenToggling) {
                 document.getElementById('menu').style.display = 'block';
+                this.isPaused = true;
+                this.pauseTime = Date.now();
             }
             document.getElementById('hud').style.display = 'none';
             document.getElementById('crosshair').style.display = 'none';
@@ -1052,7 +1067,9 @@ class Game {
                 if (this.toggleFullscreen) this.toggleFullscreen();
                 break;
             case 'Escape':
-                this.toggleMenu();
+                if (this.gameStarted && !this.isGameOver) {
+                    this.toggleMenu();
+                }
                 break;
         }
 
