@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;700&display=swap');
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
 :root {
   --primary-bg: #050510;
   --accent-color: #ff3333;
@@ -251,9 +255,10 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   cursor: pointer;
   pointer-events: auto;
-  font-size: 1.8rem;
+  font-size: 2rem;
   z-index: 1000;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   background: rgba(20, 20, 25, 0.8);
@@ -264,7 +269,6 @@ button:hover {
 #mute-icon {
   display: block;
   line-height: 1;
-  transform: translateY(-2px); /* Slight adjustment for baseline-heavy emojis */
 }
 
 #mute-btn:hover {
