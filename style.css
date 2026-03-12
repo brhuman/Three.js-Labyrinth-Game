@@ -55,8 +55,6 @@ canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
-  /* Enhanced sepia / horror color grading for game only */
-  filter: sepia(0.4) contrast(1.15) brightness(1.05) saturate(0.8) hue-rotate(5deg);
 }
 
 #ui-overlay {
@@ -253,6 +251,8 @@ button:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  text-align: center;
+  line-height: normal;
   cursor: pointer;
   pointer-events: auto;
   font-size: 1.6rem;

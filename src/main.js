@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Maze } from './maze.js';
 import { findPathBFS, getAccessibleArea } from './utils.js';
-import { VintageFilmEffect } from './vintage-film-effect.js';
 
 class Game {
     constructor() {
@@ -52,7 +51,7 @@ class Game {
         this.playerSpeed = this.basePlayerSpeed;
 
         // Difficulty settings (moved here to fix initialization order)
-        this.difficulty = 'normal'; // Default difficulty (Normal as requested)
+        this.difficulty = 'easy'; // Default difficulty (Easy as requested)
         this.difficultyMultipliers = {
             easy: 0.5,    // 50% monster speed
             normal: 0.8,  // 80% monster speed (current default)
@@ -135,9 +134,6 @@ class Game {
         this.runMessageShown = false; // Track if RUN message has been shown
         this.mazesCompleted = 0; // Track completed mazes for statistics
         
-        // Vintage film effect
-        this.vintageFilmEffect = null;
-        
         // Flashlight optimization
         this.flashlightDebounceTime = 0;
         this.flashlightDebounceDelay = 100; // ms
@@ -175,9 +171,6 @@ class Game {
         }
         
         document.body.appendChild(this.renderer.domElement);
-
-        // Initialize vintage film effect
-        this.vintageFilmEffect = new VintageFilmEffect(this.renderer, this.scene, this.camera);
 
         // Preload essential textures with tracking
         this.initTextureLoading();
@@ -518,45 +511,6 @@ class Game {
             this.toggleFullscreen();
         });
 
-        // Vintage film effect button
-        const vintageBtn = document.getElementById('vintage-btn');
-        if (vintageBtn) vintageBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (this.vintageFilmEffect) {
-                this.vintageFilmEffect.toggle();
-                document.getElementById('vintage-icon').textContent = this.vintageFilmEffect.enabled ? '🎬' : '🎞️';
-                console.log('Vintage film effect:', this.vintageFilmEffect.enabled ? 'ON' : 'OFF');
-            }
-        });
-
-        window.addEventListener('keydown', (e) => {
-            switch (e.code) {
-                case 'KeyV':
-                    if (this.vintageFilmEffect) {
-                        this.vintageFilmEffect.toggle();
-                        document.getElementById('vintage-icon').textContent = this.vintageFilmEffect.enabled ? '🎬' : '🎞️';
-                        console.log('Vintage film effect:', this.vintageFilmEffect.enabled ? 'ON' : 'OFF');
-                    }
-                    break;
-                case 'Equal': // клавиша +
-                case 'NumpadAdd':
-                    if (this.vintageFilmEffect && this.vintageFilmEffect.enabled) {
-                        const newIntensity = Math.min(1.0, this.vintageFilmEffect.intensity + 0.1);
-                        this.vintageFilmEffect.setIntensity(newIntensity);
-                        console.log('Vintage film intensity:', newIntensity.toFixed(1));
-                    }
-                    break;
-                case 'Minus': // клавиша -
-                case 'NumpadSubtract':
-                    if (this.vintageFilmEffect && this.vintageFilmEffect.enabled) {
-                        const newIntensity = Math.max(0.0, this.vintageFilmEffect.intensity - 0.1);
-                        this.vintageFilmEffect.setIntensity(newIntensity);
-                        console.log('Vintage film intensity:', newIntensity.toFixed(1));
-                    }
-                    break;
-            }
-        });
-
         // Difficulty selection
         this.setupDifficultySelection();
 
@@ -581,7 +535,6 @@ class Game {
             // Hide control buttons when playing
             document.getElementById('mute-btn').style.display = 'none';
             document.getElementById('fullscreen-btn').style.display = 'none';
-            document.getElementById('vintage-btn').style.display = 'none';
             
             // Pre-warm audio context to prevent first-frame lag
             if (this.monsterSound && this.monsterSound.context.state === 'suspended') {
@@ -665,7 +618,6 @@ class Game {
                 // Show control buttons when paused
                 document.getElementById('mute-btn').style.display = 'block';
                 document.getElementById('fullscreen-btn').style.display = 'block';
-                document.getElementById('vintage-btn').style.display = 'block';
                 
                 // Play menu music
                 if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
@@ -680,7 +632,6 @@ class Game {
                 // Show control buttons when toggling fullscreen
                 document.getElementById('mute-btn').style.display = 'block';
                 document.getElementById('fullscreen-btn').style.display = 'block';
-                document.getElementById('vintage-btn').style.display = 'block';
             }
             
             // Always hide HUD and crosshair when unlocking
@@ -735,7 +686,6 @@ class Game {
         // Show control buttons in menu initially
         document.getElementById('mute-btn').style.display = 'block';
         document.getElementById('fullscreen-btn').style.display = 'block';
-        document.getElementById('vintage-btn').style.display = 'block';
         
         // Handle preloader scream audio with multiple attempts
         const preloaderScream = document.getElementById('preloader-scream');
@@ -1932,28 +1882,6 @@ createObstacle(x, y, material, type) {
             case 'KeyL':
                 if (this.toggleFullscreen) this.toggleFullscreen();
                 break;
-            case 'KeyV':
-                if (this.vintageFilmEffect) {
-                    this.vintageFilmEffect.toggle();
-                    console.log('Vintage film effect:', this.vintageFilmEffect.enabled ? 'ON' : 'OFF');
-                }
-                break;
-            case 'Equal': // клавиша +
-            case 'NumpadAdd':
-                if (this.vintageFilmEffect && this.vintageFilmEffect.enabled) {
-                    const newIntensity = Math.min(1.0, this.vintageFilmEffect.intensity + 0.1);
-                    this.vintageFilmEffect.setIntensity(newIntensity);
-                    console.log('Vintage film intensity:', newIntensity.toFixed(1));
-                }
-                break;
-            case 'Minus': // клавиша -
-            case 'NumpadSubtract':
-                if (this.vintageFilmEffect && this.vintageFilmEffect.enabled) {
-                    const newIntensity = Math.max(0.0, this.vintageFilmEffect.intensity - 0.1);
-                    this.vintageFilmEffect.setIntensity(newIntensity);
-                    console.log('Vintage film intensity:', newIntensity.toFixed(1));
-                }
-                break;
         }
 
     }
@@ -1988,11 +1916,6 @@ createObstacle(x, y, material, type) {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        
-        // Update vintage film effect size
-        if (this.vintageFilmEffect) {
-            this.vintageFilmEffect.resize(window.innerWidth, window.innerHeight);
-        }
     }
 
     isUnderObstacle(x, z) {
@@ -2485,13 +2408,7 @@ createObstacle(x, y, material, type) {
             this.goal.position.y = 0.025 + Math.sin(performance.now() * 0.002) * 0.02;
         }
 
-        // Use vintage film effect if available, otherwise regular rendering
-        if (this.vintageFilmEffect) {
-            const deltaTime = Math.min((now - this.prevTime) / 1000, 0.1); // Cap delta time
-            this.vintageFilmEffect.render(deltaTime);
-        } else {
-            this.renderer.render(this.scene, this.camera);
-        }
+        this.renderer.render(this.scene, this.camera);
         } // Close FPS limiting block
     }
 
