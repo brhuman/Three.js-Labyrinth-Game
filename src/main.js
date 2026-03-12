@@ -1327,7 +1327,7 @@ class Game {
 
             // Slower movement when crouching, and auto-crouch if stuck under an obstacle
             this.isCrouching = this.crouchKeyPressed || this.isUnderObstacle(this.camera.position.x, this.camera.position.z);
-            const speed = this.isCrouching ? this.playerSpeed * 0.6 : this.playerSpeed;
+            const speed = this.isCrouching ? this.playerSpeed * 0.3 : this.playerSpeed;
 
             if (this.moveForward || this.moveBackward) this.velocity.z -= this.direction.z * speed * delta;
             if (this.moveLeft || this.moveRight) this.velocity.x -= this.direction.x * speed * delta;
