@@ -354,14 +354,7 @@ class Game {
             this.controls.lock();
         };
 
-        this.toggleMute = () => {
-            this.isMuted = !this.isMuted;
-            const volume = this.isMuted ? 0 : 1;
-            this.listener.setMasterVolume(volume);
-            document.getElementById('mute-icon').textContent = this.isMuted ? '🔇' : '🔊';
-        };
         const toggleMute = this.toggleMute;
-        document.getElementById('mute-btn').addEventListener('click', toggleMute);
 
         this.toggleFullscreen = () => {
 
@@ -414,7 +407,7 @@ class Game {
         const muteBtn = document.getElementById('mute-btn');
         if (muteBtn) muteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            toggleMute();
+            this.toggleMute();
         });
 
         const fsBtn = document.getElementById('fullscreen-btn');
