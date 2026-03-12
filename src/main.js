@@ -316,8 +316,7 @@ class Game {
                 startBtn.innerText = "CONTINUE";
                 this.startTime = Date.now();
             } else if (this.isPaused) {
-                // Just resume, don't reset anything
-                this.isPaused = false;
+                // The 'lock' listener will handle the rest of the resume logic
                 this.controls.lock();
                 return;
             }
@@ -435,6 +434,7 @@ class Game {
         });
 
         this.controls.addEventListener('lock', () => {
+            this.isPaused = false;
             document.getElementById('menu').style.display = 'none';
             document.getElementById('game-over').style.display = 'none';
             document.getElementById('hud').style.display = 'flex';
@@ -446,14 +446,24 @@ class Game {
                 this.startTime += pausedFor;
                 this.pauseTime = null;
             }
+
+            // Stop menu music
+            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
+                this.menuBackgroundMusic.pause();
+            }
         });
 
         this.controls.addEventListener('unlock', () => {
             // Only show menu if not game over and NOT toggling fullscreen
             if (!this.isGameOver && !this.isFullscreenToggling) {
-                document.getElementById('menu').style.display = 'block';
                 this.isPaused = true;
                 this.pauseTime = Date.now();
+                document.getElementById('menu').style.display = 'block';
+                
+                // Play menu music
+                if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
+                    this.menuBackgroundMusic.play();
+                }
             }
             document.getElementById('hud').style.display = 'none';
             document.getElementById('crosshair').style.display = 'none';
@@ -1067,12 +1077,8 @@ class Game {
                 if (this.toggleFullscreen) this.toggleFullscreen();
                 break;
             case 'Escape':
-                if (this.gameStarted && !this.isGameOver) {
-                    if (this.isPaused) {
-                        this.controls.lock();
-                    } else {
-                        this.controls.unlock();
-                    }
+                if (this.gameStarted && !this.isGameOver && this.isPaused) {
+                    this.controls.lock();
                 }
                 break;
         }
@@ -2134,23 +2140,9 @@ class Game {
 
     toggleMenu() {
         if (this.controls.isLocked) {
-            // Pause the game
-            this.isPaused = true;
             this.controls.unlock();
-            
-            // Play menu music
-            if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
-                this.menuBackgroundMusic.play();
-            }
         } else {
-            // Resume the game
-            this.isPaused = false;
             this.controls.lock();
-            
-            // Stop menu music
-            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
-                this.menuBackgroundMusic.pause();
-            }
         }
     }
 
