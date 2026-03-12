@@ -52,7 +52,7 @@ class Game {
         this.playerSpeed = this.basePlayerSpeed;
 
         // Difficulty settings (moved here to fix initialization order)
-        this.difficulty = 'hard'; // Default difficulty (Hard as requested)
+        this.difficulty = 'normal'; // Default difficulty (Normal as requested)
         this.difficultyMultipliers = {
             easy: 0.5,    // 50% monster speed
             normal: 0.8,  // 80% monster speed (current default)
@@ -98,6 +98,13 @@ class Game {
         this.fpsFrameCount = 0;
         this.fpsPrevTime = performance.now();
         // this.fpsElement = document.getElementById('fps'); // Removed FPS counter
+
+        // Crouch hint state
+        this.crouchHintShown = localStorage.getItem('crouchHintShown') === 'true';
+
+        // Play time tracking
+        this.totalPlayTime = parseFloat(localStorage.getItem('totalPlayTime')) || 0;
+        this.sessionPlayTime = 0;
 
         // Monster pathfinding throttle
         this.monsterPath = [];
@@ -2162,6 +2169,51 @@ createObstacle(x, y, material, type) {
             this.starMaterial.opacity = 0.7 + Math.sin(time * 0.0008) * 0.15;
         }
 
+        // Crouch hint logic: show if player is near a crouch beam (type 4) for the first time
+        if (this.controls.isLocked && !this.isGameOver && !this.crouchHintShown) {
+            const px = this.camera.position.x;
+            const pz = this.camera.position.z;
+            const checkRadius = 1.5; // "one cube" distance is roughly 1, but 1.5 gives a bit more breathing room
+            
+            let nearBeam = false;
+            const minX = Math.floor(px - checkRadius + 0.5);
+            const maxX = Math.floor(px + checkRadius + 0.5);
+            const minZ = Math.floor(pz - checkRadius + 0.5);
+            const maxZ = Math.floor(pz + checkRadius + 0.5);
+
+            for (let gz = minZ; gz <= maxZ; gz++) {
+                for (let gx = minX; gx <= maxX; gx++) {
+                    if (gx >= 0 && gx < this.mazeSize && gz >= 0 && gz < this.mazeSize) {
+                        if (this.grid[gz][gx] === 4) {
+                            nearBeam = true;
+                            break;
+                        }
+                    }
+                }
+                if (nearBeam) break;
+            }
+
+            if (nearBeam) {
+                const hint = document.getElementById('crouch-hint');
+                if (hint) {
+                    hint.style.display = 'block';
+                    setTimeout(() => hint.classList.add('show'), 10);
+                    
+                    this.crouchHintShown = true;
+                    localStorage.setItem('crouchHintShown', 'true');
+
+                    // Auto-hide after 5 seconds
+                    setTimeout(() => {
+                        hint.classList.add('fade-out');
+                        setTimeout(() => {
+                            hint.style.display = 'none';
+                            hint.classList.remove('show', 'fade-out');
+                        }, 500);
+                    }, 5000);
+                }
+            }
+        }
+
 
 
 
@@ -2419,10 +2471,7 @@ createObstacle(x, y, material, type) {
 
 
             if (this.startTime) {
-                const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
-                const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
-                const secs = (elapsed % 60).toString().padStart(2, '0');
-                document.getElementById('timer').textContent = `${mins}:${secs}`;
+                this.sessionPlayTime = Date.now() - this.startTime + this.totalPausedDuration;
             }
         }
 
@@ -3210,15 +3259,30 @@ createObstacle(x, y, material, type) {
         document.getElementById('fullscreen-btn').style.display = 'block';
         
         // Calculate final statistics
-        const finalLevel = this.level;
         const timeElapsed = this.startTime ? (Date.now() - this.startTime + this.totalPausedDuration) : 0;
-        const minutes = Math.floor(timeElapsed / 60000);
-        const seconds = Math.floor((timeElapsed % 60000) / 1000);
-        const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        
+        // Update session score and total score
+        this.sessionPlayTime = timeElapsed;
+        this.totalPlayTime += (this.sessionPlayTime / 1000); // Store total in seconds for consistency
+        localStorage.setItem('totalPlayTime', this.totalPlayTime);
+
+        const formatTime = (secondsTotal) => {
+            const hrs = Math.floor(secondsTotal / 3600);
+            const mins = Math.floor((secondsTotal % 3600) / 60);
+            const secs = Math.floor(secondsTotal % 60);
+            let result = "";
+            if (hrs > 0) result += hrs.toString().padStart(2, '0') + ":";
+            result += mins.toString().padStart(2, '0') + ":" + secs.toString().padStart(2, '0');
+            return result;
+        };
+
+        const sessionTimeString = formatTime(this.sessionPlayTime / 1000);
+        const totalTimeString = formatTime(this.totalPlayTime);
         
         // Update death statistics
-        document.getElementById('death-level').textContent = finalLevel;
-        document.getElementById('death-time').textContent = timeString;
+        document.getElementById('death-level').textContent = this.level;
+        document.getElementById('death-time').textContent = sessionTimeString;
+        document.getElementById('total-death-time').textContent = totalTimeString;
         document.getElementById('death-mazes').textContent = this.mazesCompleted;
         
         this.playDeathScream();
