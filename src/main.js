@@ -469,16 +469,40 @@ class Game {
         this.buildMaze();
         this.animate();
         
-        // Hide preloader after game initialization
-        setTimeout(() => {
-            const preloader = document.getElementById('preloader');
-            if (preloader) {
-                preloader.style.animation = 'fadeOut 1s ease-in-out';
-                setTimeout(() => {
-                    preloader.style.display = 'none';
-                }, 1000);
+        // Track texture loading
+        let texturesLoaded = 0;
+        const totalTextures = 7; // brick, floor, clouds, moon, monster_face_1, monster_face_2, wood
+        
+        const checkAllLoaded = () => {
+            texturesLoaded++;
+            if (texturesLoaded >= totalTextures) {
+                const preloader = document.getElementById('preloader');
+                if (preloader) {
+                    preloader.style.animation = 'fadeOut 1s ease-in-out';
+                    setTimeout(() => {
+                        preloader.style.display = 'none';
+                    }, 1000);
+                }
             }
-        }, 2000);
+        };
+        
+        // Override texture loading callbacks to track completion
+        const originalLoad = this.textureLoader.load;
+        this.textureLoader.load = (url, onLoad, onProgress, onError) => {
+            return originalLoad.call(this.textureLoader, url, (texture) => {
+                checkAllLoaded();
+                if (onLoad) onLoad(texture);
+            }, onProgress, onError);
+        };
+        
+        // Preload all essential textures
+        this.textureLoader.load('/textures/brick.png', checkAllLoaded);
+        this.textureLoader.load('/textures/floor.png', checkAllLoaded);
+        this.textureLoader.load('/textures/clouds.png', checkAllLoaded);
+        this.textureLoader.load('/textures/moon.png', checkAllLoaded);
+        this.textureLoader.load('/textures/monster_face_1.png', checkAllLoaded);
+        this.textureLoader.load('/textures/monster_face_2.png', checkAllLoaded);
+        this.textureLoader.load('/textures/wood.png', checkAllLoaded);
     }
 
     clearMaze() {
