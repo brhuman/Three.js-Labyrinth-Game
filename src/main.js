@@ -9,6 +9,7 @@ class Game {
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
+        this.startingLevel = 1;
         this.level = 1;
         this.baseMazeSize = 10; // 30% smaller than previous 15
         this.mazeSize = this.baseMazeSize; // Will be calculated per level
@@ -347,6 +348,7 @@ class Game {
         const startGame = () => {
             if (!this.gameStarted) {
                 this.gameStarted = true;
+                this.level = this.startingLevel; // Set level from selector
                 startBtn.innerText = "CONTINUE";
                 this.startTime = Date.now();
             } else if (this.isPaused) {
@@ -501,6 +503,8 @@ class Game {
 
         // Difficulty selection
         this.setupDifficultySelection();
+        // Level selection
+        this.setupLevelSelection();
 
         startBtn.addEventListener('click', startGame);
         restartBtn.addEventListener('click', () => {
@@ -767,6 +771,36 @@ class Game {
         updateDifficulty(this.difficulty);
     }
 
+    setupLevelSelection() {
+        const levelValSpan = document.getElementById('starting-level-val');
+        const levelDecBtn = document.getElementById('level-dec');
+        const levelIncBtn = document.getElementById('level-inc');
+        
+        const updateLevelUI = () => {
+            if (levelValSpan) levelValSpan.textContent = this.startingLevel;
+        };
+        
+        if (levelDecBtn) {
+            levelDecBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.startingLevel > 1) {
+                    this.startingLevel--;
+                    updateLevelUI();
+                }
+            });
+        }
+        
+        if (levelIncBtn) {
+            levelIncBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (this.startingLevel < 99) {
+                    this.startingLevel++;
+                    updateLevelUI();
+                }
+            });
+        }
+    }
+
     initTextureLoading() {
         // Track texture loading
         let texturesLoaded = 0;
@@ -894,109 +928,44 @@ class Game {
         });
 
         // Настраиваем освещение в зависимости от уровня
-        let fogColor, fogNear, fogFar;
-        let ambientColor, ambientIntensity;
-        let hemiSkyColor, hemiGroundColor, hemiIntensity;
-        let moonColor, moonIntensity;
 
-        // Плавное затемнение на 8 уровней
-        if (this.level <= 1) {
-            // Уровень 1 - самый светлый (улучшенный)
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 25; // Увеличена дальность тумана
-            ambientColor = 0xa0a8a0; // Ярче
-            ambientIntensity = 0.50; // Увеличена интенсивность
-            hemiSkyColor = 0xc8e0ff; // Ярче
-            hemiGroundColor = 0x101308;
-            hemiIntensity = 0.25; // Увеличена интенсивность
-            moonColor = 0xd8e8d8; // Ярче
-            moonIntensity = 1.5; // Увеличена интенсивность
-        } else if (this.level === 2) {
-            // Уровень 2 - немного темнее
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 22;
-            ambientColor = 0x909890;
-            ambientIntensity = 0.45;
-            hemiSkyColor = 0xb8d0ff;
-            hemiGroundColor = 0x101308;
-            hemiIntensity = 0.22;
-            moonColor = 0xc8d8c8;
-            moonIntensity = 1.3;
-        } else if (this.level === 3) {
-            // Уровень 3 - средняя темнота
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 18;
-            ambientColor = 0x808880;
-            ambientIntensity = 0.40;
-            hemiSkyColor = 0xb0c8ff;
-            hemiGroundColor = 0x101308;
-            hemiIntensity = 0.18;
-            moonColor = 0xb8c8b8;
-            moonIntensity = 1.1;
-        } else if (this.level === 4) {
-            // Уровень 4 - довольно темный
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 15;
-            ambientColor = 0x707870;
-            ambientIntensity = 0.35;
-            hemiSkyColor = 0xa8c0ff;
-            hemiGroundColor = 0x101308;
-            hemiIntensity = 0.15;
-            moonColor = 0xb0c0b0;
-            moonIntensity = 0.95;
-        } else if (this.level === 5) {
-            // Уровень 5 - темный
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 12;
-            ambientColor = 0x606860;
-            ambientIntensity = 0.30;
-            hemiSkyColor = 0xa0b8ff;
-            hemiGroundColor = 0x0c1010;
-            hemiIntensity = 0.12;
-            moonColor = 0xa8b8a8;
-            moonIntensity = 0.80;
-        } else if (this.level === 6) {
-            // Уровень 6 - очень темный
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 10;
-            ambientColor = 0x585858;
-            ambientIntensity = 0.26;
-            hemiSkyColor = 0x98b0f0;
-            hemiGroundColor = 0x0c1010;
-            hemiIntensity = 0.10;
-            moonColor = 0xa0b0a0;
-            moonIntensity = 0.70;
-        } else if (this.level === 7) {
-            // Уровень 7 - крайне темный
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 8;
-            ambientColor = 0x505850;
-            ambientIntensity = 0.23;
-            hemiSkyColor = 0x90a8e8;
-            hemiGroundColor = 0x0c1010;
-            hemiIntensity = 0.08;
-            moonColor = 0x98a898;
-            moonIntensity = 0.60;
-        } else {
-            // Уровень 8+ - самый темный
-            fogColor = 0x040804;
-            fogNear = 0.5;
-            fogFar = 6; // Минимальная дальность тумана
-            ambientColor = 0x485048;
-            ambientIntensity = 0.20; // Минимальная интенсивность
-            hemiSkyColor = 0x88a0e0;
-            hemiGroundColor = 0x081008;
-            hemiIntensity = 0.06; // Минимальная интенсивность
-            moonColor = 0x90a090;
-            moonIntensity = 0.50; // Минимальная интенсивность
-        }
+        // Настраиваем освещение в зависимости от уровня (плавное затемнение)
+        // Рассчитываем фактор прогрессии (0 = уровень 1, 1 = уровень 15+)
+        const darkenFactor = Math.min(1.0, (this.level - 1) / 14);
+        
+        // 1. Fog parameters
+        const fogColor = 0x040804;
+        const fogNear = 0.5;
+        // fogFar: L1=25, L15+=6
+        const fogFar = 25 - (darkenFactor * 19);
+        
+        // 2. Ambient light (Color interpolates towards darker grey)
+        // L1: 0xa0a8a0 (160, 168, 160) -> L15+: 0x485048 (72, 80, 72)
+        const rA = Math.round(160 - (darkenFactor * (160 - 72)));
+        const gA = Math.round(168 - (darkenFactor * (168 - 80)));
+        const bA = Math.round(160 - (darkenFactor * (160 - 72)));
+        const ambientColor = (rA << 16) | (gA << 8) | bA;
+        // intensity: L1=0.50, L15+=0.20
+        const ambientIntensity = 0.50 - (darkenFactor * 0.30);
+        
+        // 3. Hemisphere light
+        // Sky L1: 0xc8e0ff (200, 224, 255) -> L15+: 0x88a0e0 (136, 160, 224)
+        const rH = Math.round(200 - (darkenFactor * (200 - 136)));
+        const gH = Math.round(224 - (darkenFactor * (224 - 160)));
+        const bH = Math.round(255 - (darkenFactor * (255 - 224)));
+        const hemiSkyColor = (rH << 16) | (gH << 8) | bH;
+        const hemiGroundColor = 0x101308;
+        // intensity: L1=0.25, L15+=0.06
+        const hemiIntensity = 0.25 - (darkenFactor * 0.19);
+        
+        // 4. Moon light
+        // L1: 0xd8e8d8 (216, 232, 216) -> L15+: 0x90a090 (144, 160, 144)
+        const rM = Math.round(216 - (darkenFactor * (216 - 144)));
+        const gM = Math.round(232 - (darkenFactor * (232 - 160)));
+        const bM = Math.round(216 - (darkenFactor * (216 - 144)));
+        const moonColor = (rM << 16) | (gM << 8) | bM;
+        // intensity: L1=1.5, L15+=0.5
+        const moonIntensity = 1.5 - (darkenFactor * 1.0);
 
         // Обновляем туман
         this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);

@@ -744,6 +744,74 @@ button:hover {
   opacity: 0.7;
 }
 
+/* Level Selection Styles */
+.level-selection {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 15px;
+  border-radius: 8px;
+  border-left: 3px solid #00bbff; /* Blue for levels */
+  margin-bottom: 20px;
+}
+
+.level-selection h3 {
+  color: #fff;
+  margin-top: 0;
+  margin-bottom: 12px;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.level-selector-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+.level-nav-btn {
+  background: rgba(0, 187, 255, 0.1);
+  color: #00bbff;
+  border: 1px solid rgba(0, 187, 255, 0.4);
+  width: 40px;
+  height: 40px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 1.5rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 0 10px rgba(0, 187, 255, 0.1);
+}
+
+.level-nav-btn:hover {
+  background: rgba(0, 187, 255, 0.2);
+  border-color: #00bbff;
+  box-shadow: 0 0 15px rgba(0, 187, 255, 0.4);
+  transform: scale(1.1);
+}
+
+.level-nav-btn:active {
+  transform: scale(0.9);
+}
+
+.level-display {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: #ffffff;
+  text-shadow: 0 0 10px rgba(0, 187, 255, 0.6);
+  min-width: 120px;
+  text-align: center;
+}
+
+.level-display span {
+  color: #00bbff;
+}
+
 @keyframes run-blood-drip {
   0%, 100% {
     text-shadow: 
