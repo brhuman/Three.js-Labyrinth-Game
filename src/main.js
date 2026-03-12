@@ -469,6 +469,39 @@ class Game {
         this.buildMaze();
         this.animate();
         
+        // Handle preloader scream audio with multiple attempts
+        const preloaderScream = document.getElementById('preloader-scream');
+        if (preloaderScream) {
+            preloaderScream.volume = 0.4;
+            preloaderScream.loop = true;
+            
+            // Try to play immediately
+            const tryPlay = () => {
+                preloaderScream.play().catch(e => {
+                    console.warn('Preloader scream failed to play:', e);
+                });
+            };
+            
+            tryPlay();
+            
+            // Try again after a short delay (in case of loading issues)
+            setTimeout(tryPlay, 100);
+            setTimeout(tryPlay, 500);
+            setTimeout(tryPlay, 1000);
+            
+            // Add click listener to start audio on first user interaction
+            const startAudioOnInteraction = () => {
+                if (preloaderScream.paused) {
+                    tryPlay();
+                }
+                document.removeEventListener('click', startAudioOnInteraction);
+                document.removeEventListener('keydown', startAudioOnInteraction);
+            };
+            
+            document.addEventListener('click', startAudioOnInteraction);
+            document.addEventListener('keydown', startAudioOnInteraction);
+        }
+        
         // Track texture loading
         let texturesLoaded = 0;
         const totalTextures = 7; // brick, floor, clouds, moon, monster_face_1, monster_face_2, wood
@@ -481,6 +514,11 @@ class Game {
                     preloader.style.animation = 'fadeOut 1s ease-in-out';
                     setTimeout(() => {
                         preloader.style.display = 'none';
+                        // Stop preloader scream when preloader is hidden
+                        if (preloaderScream && !preloaderScream.paused) {
+                            preloaderScream.pause();
+                            preloaderScream.currentTime = 0;
+                        }
                     }, 1000);
                 }
             }
