@@ -8,6 +8,8 @@ import { translations } from './translations.js';
 class Game {
     constructor() {
         this.scene = new THREE.Scene();
+        // Добавляем начальный туман с первого уровня
+        this.scene.fog = new THREE.Fog(0x040804, 2, 15);
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.controls = null;
@@ -176,9 +178,9 @@ class Game {
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-        this.renderer.setClearColor(0x020502);
+        this.renderer.setClearColor(0x040804); // Изменен цвет для соответствия туману
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Better shadow quality
         this.renderer.powerPreference = "high-performance";
         this.renderer.antialias = window.devicePixelRatio <= 1;
         
@@ -445,6 +447,8 @@ class Game {
             if (!this.gameStarted) {
                 this.gameStarted = true;
                 this.level = this.startingLevel; // Set level from selector
+                this.updateLighting(); // Apply lighting based on selected level
+                document.body.classList.remove('menu-visible'); // Remove menu-visible class
                 startBtn.style.display = 'none';
                 continueBtn.style.display = 'block';
                 this.startTime = Date.now();
@@ -629,6 +633,7 @@ class Game {
             this.isPaused = false;
             document.getElementById('menu').style.display = 'none';
             document.getElementById('game-over').style.display = 'none';
+            document.body.classList.remove('menu-visible'); // Remove menu-visible class
             document.getElementById('hud').style.display = 'flex';
             document.getElementById('crosshair').style.display = 'block';
             
@@ -722,6 +727,7 @@ class Game {
                 this.gameStartTime = null;
                 
                 document.getElementById('menu').style.display = 'block';
+                document.body.classList.add('menu-visible'); // Add menu-visible class
                 
                 // Reset menu to main page on pause
                 showPage(menuMain);
@@ -1264,7 +1270,10 @@ class Game {
                     object !== this.flashlight &&     // Never delete the flashlight
                     object !== this.flashlightHalo && // Never delete the flashlight halo
                     object !== this.flashlightTarget && // Never delete the flashlight target
+                    object !== this.goal && // Never delete the goal glow
                     object !== this.goalLight && // Never delete the goal light
+                    object !== this.startGlow && // Never delete the start glow
+                    object !== this.startGlowLight && // Never delete the start glow light
                     !object.isAmbientLight) {
                     toRemove.push(object);
                 }
@@ -1303,6 +1312,8 @@ class Game {
             this.crouchBeams = [];
             this.goal = null;
             this.goalLight = null;
+            this.startGlow = null;
+            this.startGlowLight = null;
             this.torchLights = [];
         } catch (error) {
             console.error('Error in clearMaze():', error);
@@ -1313,6 +1324,8 @@ class Game {
             this.crouchBeams = [];
             this.goal = null;
             this.goalLight = null;
+            this.startGlow = null;
+            this.startGlowLight = null;
             this.torchLights = [];
         }
     }
@@ -1332,42 +1345,42 @@ class Game {
 
         // Configure lighting based on level (Smooth Darkening - L1 to L15+)
         // Progression factor: 0 = L1, 1 = L5+.
-        // Capped at level 5 as requested (darken faster)
-        const darkenFactor = Math.min(1.0, (this.level - 1) / 4);
+        // Increased darkening - first level 20% darker, faster progression
+        const darkenFactor = Math.min(1.0, (this.level - 1) / 3); // Changed from /4 to /3 for faster darkening
         
-        // 1. Fog parameters
+        // 1. Fog parameters - теперь более заметный с первого уровня
         const fogColor = 0x040804;
-        const fogNear = 0.5;
-        // fogFar: L1=25, L15+=6
-        const fogFar = 25 - (darkenFactor * 19);
+        const fogNear = 2; // Увеличил с 0.5 до 2 для более заметного тумана
+        // fogFar: L1=15, L15+=3 - значительно более густой туман (было 20->5)
+        const fogFar = 15 - (darkenFactor * 12);
         
         // 2. Ambient light (Color interpolates towards darker grey)
-        // L1: 0xa0a8a0 (160, 168, 160) -> L15+: 0x485048 (72, 80, 72)
-        const rA = Math.round(160 - (darkenFactor * (160 - 72)));
-        const gA = Math.round(168 - (darkenFactor * (168 - 80)));
-        const bA = Math.round(160 - (darkenFactor * (160 - 72)));
+        // L1: 0x808880 (128, 136, 128) -> L15+: 0x384038 (56, 64, 56) - 20% darker than before
+        const rA = Math.round(128 - (darkenFactor * (128 - 56)));
+        const gA = Math.round(136 - (darkenFactor * (136 - 64)));
+        const bA = Math.round(128 - (darkenFactor * (128 - 56)));
         const ambientColor = (rA << 16) | (gA << 8) | bA;
-        // intensity: L1=0.50, L15+=0.20
-        const ambientIntensity = 0.50 - (darkenFactor * 0.30);
+        // intensity: L1=0.40, L15+=0.15 - 20% darker than before
+        const ambientIntensity = 0.40 - (darkenFactor * 0.25);
         
         // 3. Hemisphere light
-        // Sky L1: 0xc8e0ff (200, 224, 255) -> L15+: 0x88a0e0 (136, 160, 224)
-        const rH = Math.round(200 - (darkenFactor * (200 - 136)));
-        const gH = Math.round(224 - (darkenFactor * (224 - 160)));
-        const bH = Math.round(255 - (darkenFactor * (255 - 224)));
+        // Sky L1: 0xa0c0df (160, 192, 223) -> L15+: 0x6080a0 (96, 128, 160) - 20% darker than before
+        const rH = Math.round(160 - (darkenFactor * (160 - 96)));
+        const gH = Math.round(192 - (darkenFactor * (192 - 128)));
+        const bH = Math.round(223 - (darkenFactor * (223 - 160)));
         const hemiSkyColor = (rH << 16) | (gH << 8) | bH;
         const hemiGroundColor = 0x101308;
-        // intensity: L1=0.25, L15+=0.06
-        const hemiIntensity = 0.25 - (darkenFactor * 0.19);
+        // intensity: L1=0.20, L15+=0.05 - 20% darker than before
+        const hemiIntensity = 0.20 - (darkenFactor * 0.15);
         
         // 4. Moon light
-        // L1: 0xd8e8d8 (216, 232, 216) -> L15+: 0x506050 (80, 96, 80)
-        const rM = Math.round(216 - (darkenFactor * (216 - 80)));
-        const gM = Math.round(232 - (darkenFactor * (232 - 96)));
-        const bM = Math.round(216 - (darkenFactor * (216 - 80)));
+        // L1: 0xb0c0b0 (176, 192, 176) -> L15+: 0x405040 (64, 80, 64) - 20% darker than before
+        const rM = Math.round(176 - (darkenFactor * (176 - 64)));
+        const gM = Math.round(192 - (darkenFactor * (192 - 80)));
+        const bM = Math.round(176 - (darkenFactor * (176 - 64)));
         const moonColor = (rM << 16) | (gM << 8) | bM;
-        // intensity: L1=1.5, L15+=0.3
-        const moonIntensity = 1.5 - (darkenFactor * 1.2);
+        // intensity: L1=1.2, L15+=0.24 - 20% darker than before
+        const moonIntensity = 1.2 - (darkenFactor * 0.96);
         this.baseMoonIntensity = moonIntensity; // Store for animation
 
         // Update fog settings
@@ -1384,6 +1397,16 @@ class Game {
 
         this.moonLight = new THREE.DirectionalLight(moonColor, moonIntensity);
         this.moonLight.castShadow = true; // Always cast shadows now
+        this.moonLight.shadow.mapSize.width = 2048; // Higher resolution shadows
+        this.moonLight.shadow.mapSize.height = 2048;
+        this.moonLight.shadow.camera.near = 0.1;
+        this.moonLight.shadow.camera.far = 200;
+        this.moonLight.shadow.camera.left = -50;
+        this.moonLight.shadow.camera.right = 50;
+        this.moonLight.shadow.camera.top = 50;
+        this.moonLight.shadow.camera.bottom = -50;
+        this.moonLight.shadow.bias = -0.0005;
+        this.moonLight.shadow.radius = 1;
         
         // Position moon at diagonal angle for interesting shadows
         this.moonLight.position.set(100, 100, -100);
@@ -1394,6 +1417,11 @@ class Game {
         // Initialize shadow settings based on current quality
         this.updateMoonLightShadows();
         this.scene.add(this.moonLight);
+        
+        // Compile scene to ensure shadows are properly initialized
+        if (this.renderer) {
+            this.renderer.compile(this.scene, this.camera);
+        }
     }
 
     updateMoonLightShadows() {
@@ -1494,7 +1522,177 @@ class Game {
         this.moonLight.shadow.mapSize.height = shadowResolution;
     }
 
+    createGlowEffect(x, z, color, lightColor, lightIntensity, lightDistance) {
+        const glow = new THREE.Group();
+        
+        // Main glow layer - positioned exactly at floor level
+        const mainGlowGeometry = new THREE.CylinderGeometry(0.28, 0.28, 0.035, 32);
+        const mainGlowMaterial = new THREE.MeshStandardMaterial({
+            color: color,
+            emissive: color,
+            emissiveIntensity: 2.0,
+            roughness: 0.2,
+            metalness: 0.1,
+            transparent: true,
+            opacity: 0.4
+        });
+        const mainGlow = new THREE.Mesh(mainGlowGeometry, mainGlowMaterial);
+        mainGlow.position.set(0, -0.017, 0); // Half height below floor to sit exactly on floor
+        glow.add(mainGlow);
+        
+        // Inner bright core
+        const coreGeometry = new THREE.CylinderGeometry(0.14, 0.14, 0.021, 32);
+        const coreMaterial = new THREE.MeshStandardMaterial({
+            color: this.lightenColor(color, 0.5),
+            emissive: color,
+            emissiveIntensity: 3.0,
+            roughness: 0.0,
+            metalness: 0.2,
+            transparent: true,
+            opacity: 0.8
+        });
+        const core = new THREE.Mesh(coreGeometry, coreMaterial);
+        core.position.set(0, -0.017, 0); // Same level as main glow
+        glow.add(core);
+        
+        // Create particles with consistent behavior
+        const particleCount = 6;
+        for (let i = 0; i < particleCount; i++) {
+            const particleGeometry = new THREE.SphereGeometry(0.014, 8, 8);
+            const particleMaterial = new THREE.MeshStandardMaterial({
+                color: color,
+                emissive: color,
+                emissiveIntensity: 1.5,
+                transparent: true,
+                opacity: 0.7
+            });
+            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+            
+            // Start ALL particles from exact center
+            particle.position.set(0, -0.017, 0);
+            
+            // Store animation data
+            particle.userData = {
+                angle: (i / particleCount) * Math.PI * 2,
+                baseRadius: 0,
+                spiralSpeed: 0.3,
+                riseSpeed: 0.15,
+                maxHeight: 1.4,
+                startTime: performance.now() + (i * 300),
+                glowPosition: { x: x, z: z },
+                particleIndex: i,
+                initialY: -0.017 // Store initial Y position
+            };
+            
+            glow.add(particle);
+        }
+        
+        // Position the entire glow group
+        glow.position.set(x, 0, z); // Group at floor level
+        
+        // Add to scene
+        this.scene.add(glow);
+        
+        // Add point light with reduced range
+        const glowLight = new THREE.PointLight(lightColor, lightIntensity, lightDistance * 0.5);
+        glowLight.position.set(x, 0.1, z); // Very low position
+        this.scene.add(glowLight);
+        
+        return { glow, glowLight };
+    }
+    
+    // Helper function to lighten a color
+    lightenColor(color, factor) {
+        const c = new THREE.Color(color);
+        c.r = Math.min(1, c.r + (1 - c.r) * factor);
+        c.g = Math.min(1, c.g + (1 - c.g) * factor);
+        c.b = Math.min(1, c.b + (1 - c.b) * factor);
+        return c.getHex();
+    }
+
+    animateGlowEffect(glow, time) {
+        if (!glow) return;
+        
+        const currentTime = performance.now();
+        const pulseIntensity = Math.sin(currentTime * 0.002) * 0.4 + 0.6;
+        
+        // Animate main glow and core
+        if (glow.children[0]) { // Main glow
+            glow.children[0].material.emissiveIntensity = 2.0 * pulseIntensity;
+        }
+        if (glow.children[1]) { // Core
+            glow.children[1].material.emissiveIntensity = 3.0 * pulseIntensity;
+            glow.children[1].rotation.y = time * 0.5;
+        }
+        
+        // Animate ALL particles with IDENTICAL behavior
+        for (let i = 2; i < glow.children.length; i++) {
+            const particle = glow.children[i];
+            const userData = particle.userData;
+            
+            // Always visible
+            particle.visible = true;
+            
+            // Calculate elapsed time
+            const elapsed = (currentTime - userData.startTime) * 0.001;
+            
+            // Spiral motion from center
+            const spiralProgress = elapsed * userData.spiralSpeed;
+            const currentRadius = userData.baseRadius + (spiralProgress * 0.03);
+            const currentHeight = elapsed * userData.riseSpeed;
+            const rotationAngle = userData.angle + spiralProgress * 1.5;
+            
+            // Calculate position
+            const particleX = Math.cos(rotationAngle) * currentRadius;
+            const particleZ = Math.sin(rotationAngle) * currentRadius;
+            
+            // Boundary checking
+            const glowX = userData.glowPosition.x;
+            const glowZ = userData.glowPosition.z;
+            const worldX = glowX + particleX;
+            const worldZ = glowZ + particleZ;
+            
+            const boundedX = Math.max(0.5, Math.min(this.mazeSize - 0.5, worldX));
+            const boundedZ = Math.max(0.5, Math.min(this.mazeSize - 0.5, worldZ));
+            
+            // Apply position relative to glow group
+            particle.position.x = boundedX - glowX;
+            particle.position.z = boundedZ - glowZ;
+            particle.position.y = userData.initialY + currentHeight;
+            
+            // Reset cycle
+            if (currentHeight >= userData.maxHeight) {
+                userData.startTime = currentTime;
+                particle.material.opacity = 0.7;
+            }
+            
+            // Uniform pulsing
+            const pulsePhase = (userData.particleIndex / 6) * Math.PI * 2;
+            particle.material.emissiveIntensity = 1.5 + Math.sin(currentTime * 0.003 + pulsePhase) * 0.3;
+        }
+        
+        // No floating - keep static
+    }
+
     buildMaze() {
+        // Force remove old glow effects to prevent duplication
+        if (this.goal && this.goal.parent) {
+            this.scene.remove(this.goal);
+            this.goal = null;
+        }
+        if (this.goalLight && this.goalLight.parent) {
+            this.scene.remove(this.goalLight);
+            this.goalLight = null;
+        }
+        if (this.startGlow && this.startGlow.parent) {
+            this.scene.remove(this.startGlow);
+            this.startGlow = null;
+        }
+        if (this.startGlowLight && this.startGlowLight.parent) {
+            this.scene.remove(this.startGlowLight);
+            this.startGlowLight = null;
+        }
+        
         // Calculate maze size for current level
         if (this.level === 1) {
             this.mazeSize = this.baseMazeSize; // Level 1: base size (10)
@@ -1515,15 +1713,16 @@ class Game {
         // Initialize exploration grid
         this.explorationGrid = Array(this.mazeSize).fill().map(() => Array(this.mazeSize).fill(false));
 
-        const wallMaterial = new THREE.MeshPhongMaterial({ 
+        const wallMaterial = new THREE.MeshStandardMaterial({ 
             map: this.textures.brick,
             color: 0xa0b0a0, // Subtle green-grey tint (mossy/forest look)
-            shininess: 5,
+            roughness: 0.8, // Add roughness for better material response
+            metalness: 0.0, // Walls are not metallic
             shadowSide: THREE.DoubleSide
         });
 
         const floorGeometry = new THREE.PlaneGeometry(this.mazeSize, this.mazeSize);
-        const floorMaterial = new THREE.MeshPhongMaterial({ 
+        const floorMaterial = new THREE.MeshStandardMaterial({ 
             map: this.textures.floor,
             color: 0x90a090 // Slightly darker green tint for floor
         });
@@ -1671,16 +1870,10 @@ class Game {
             this.spawnPowerup(pos.x, pos.y, powerupTypes[i]);
         }
 
-        // 2. Spawn Batteries (progressive: 0 on level 1, 1 on level 2, 2 on level 3, 3+ on level 4+)
-        let numBatteries;
-        if (this.level === 1) {
-            numBatteries = 0; // Level 1: no batteries
-        } else if (this.level === 2) {
-            numBatteries = 1; // Level 2: minimal batteries  
-        } else if (this.level === 3) {
-            numBatteries = 2; // Level 3: few batteries
-        } else {
-            numBatteries = 3; // Level 4+: normal amount
+        // 2. Spawn Batteries (only from level 6 onwards)
+        let numBatteries = 0;
+        if (this.level >= 6) {
+            numBatteries = Math.min(3, this.level - 5); // Level 6: 1, Level 7: 2, Level 8+: 3
         }
         
         const batteryPositions = this.selectFarFromStartPositions(emptySpaces, numBatteries, 8); // Min distance 8 from start
@@ -1732,102 +1925,26 @@ class Game {
             }
         }
 
-        // Start Door (Closed)
-        this.createDoor(-0.4, 1, false);
+        // Create beautiful green exit glow using universal function
+        const greenGlow = this.createGlowEffect(exitX, exitZ, 0x00ff00, 0x00ff00, 1, 3); // Reduced intensity and distance
+        this.goal = greenGlow.glow;
+        this.goalLight = greenGlow.glowLight;
 
-        // End Door (Open) frame
-        this.createDoor(exitX, exitZ, true, exitSide);
-
-        // Green glowing floor area instead of door panel
-        const floorGlowGeometry = new THREE.BoxGeometry(1, 0.05, 1);
-        const floorGlowMaterial = new THREE.MeshPhongMaterial({ 
-            color: 0x00ff00, 
-            emissive: 0x00ff00,
-            emissiveIntensity: 1.2,
-            transparent: true,
-            opacity: 0.6
-        });
-        this.goal = new THREE.Mesh(floorGlowGeometry, floorGlowMaterial);
-        this.goal.position.set(exitX, 0.025, exitZ); // Slightly above floor
-        this.scene.add(this.goal); // Add goal to scene!
-        
-        // Add green point light for better visibility
-        this.goalLight = new THREE.PointLight(0x00ff00, 3, 10);
-        this.goalLight.position.set(exitX, 0.5, exitZ); // Lower position for floor glow
-        this.scene.add(this.goalLight);
+        // Create beautiful red start glow using universal function
+        const redGlow = this.createGlowEffect(0, 1, 0xff0000, 0xff0000, 0.8, 2.5); // Reduced intensity and distance
+        this.startGlow = redGlow.glow;
+        this.startGlowLight = redGlow.glowLight;
 
         document.getElementById('level').textContent = this.level;
 
         this.camera.position.set(0, this.baseHeight, 1);
         this.camera.lookAt(2, this.baseHeight, 1); // Look further into the maze
-    }
-
-    createDoor(x, z, isOpen, exitSide = null) {
-        const doorMaterial = new THREE.MeshPhongMaterial({ 
-            map: this.textures.floor,
-            color: isOpen ? 0x00ff00 : 0x885533, // Green tint for open doors, dark wood for closed
-            emissive: 0x000000, // No emissive for doors
-            shininess: 10
-        }); 
         
-        if (!isOpen) {
-            // Door lowered from 1.3 to 1.1
-            const doorGeo = new THREE.BoxGeometry(0.1, 1.1, 1);
-            const door = new THREE.Mesh(doorGeo, doorMaterial);
-            door.position.set(x, 0.55, z);
-            door.castShadow = true;
-            door.receiveShadow = true;
-            this.scene.add(door);
-        } else {
-            // Determine door orientation based on exit side
-            let isRotated = false;
-            if (exitSide === 'right') {
-                // Exit is on right wall, so door should face inward (along -X axis)
-                isRotated = true;
-            }
-            // For bottom wall exit, door faces inward (along -Z axis) - no rotation needed
-            
-            // Open door frame
-            const frameGeo = new THREE.BoxGeometry(0.1, 1.1, 0.2);
-            
-            const leftFrame = new THREE.Mesh(frameGeo, doorMaterial);
-            const rightFrame = new THREE.Mesh(frameGeo, doorMaterial);
-            
-            if (isRotated) {
-                // For right wall exit: frames should be positioned along Z axis but rotated
-                leftFrame.position.set(x, 0.55, z - 0.4);
-                rightFrame.position.set(x, 0.55, z + 0.4);
-                leftFrame.rotation.y = Math.PI / 2;
-                rightFrame.rotation.y = Math.PI / 2;
-            } else {
-                // For bottom wall exit: frames positioned along X axis
-                leftFrame.position.set(x - 0.4, 0.55, z);
-                rightFrame.position.set(x + 0.4, 0.55, z);
-            }
-            
-            leftFrame.castShadow = true;
-            leftFrame.receiveShadow = true;
-            this.scene.add(leftFrame);
-
-            rightFrame.castShadow = true;
-            rightFrame.receiveShadow = true;
-            this.scene.add(rightFrame);
-
-            // Top frame with proper dimensions based on orientation
-            const topGeo = isRotated ? 
-                new THREE.BoxGeometry(1, 0.2, 0.1) : // Rotated: longer along X
-                new THREE.BoxGeometry(0.1, 0.2, 1);  // Standard: longer along Z
-            const topFrame = new THREE.Mesh(topGeo, doorMaterial);
-            topFrame.position.set(x, 1.2, z); // 1.1 + 0.1
-            topFrame.castShadow = true;
-            topFrame.receiveShadow = true;
-            if (isRotated) {
-                topFrame.rotation.y = Math.PI / 2;
-            }
-            this.scene.add(topFrame);
+        // Compile scene to ensure shadows are properly initialized after maze is built
+        if (this.renderer) {
+            this.renderer.compile(this.scene, this.camera);
         }
     }
-
 
     createCoinTexture(text, colorStr) {
         const canvas = document.createElement('canvas');
@@ -2824,7 +2941,7 @@ createObstacle(x, y, material, type) {
             }
 
             const distToGoal = this.camera.position.distanceTo(this.goal.position);
-            if (this.goal && distToGoal < 0.8) {
+            if (this.goal && distToGoal < 1.0) { // Slightly larger distance for new glow
                 this.nextLevel();
             }
 
@@ -2851,14 +2968,13 @@ createObstacle(x, y, material, type) {
             }
         }
 
-
+        // Animate glow effects
+        const glowTime = performance.now() * 0.001;
         if (this.goal) {
-            // Floor glow doesn't need to face player, but keep pulsing effect
-            const pulseIntensity = Math.sin(performance.now() * 0.003) * 0.3 + 0.7;
-            this.goal.material.emissiveIntensity = 1.2 * pulseIntensity;
-            
-            // Subtle floating animation for the floor glow
-            this.goal.position.y = 0.025 + Math.sin(performance.now() * 0.002) * 0.02;
+            this.animateGlowEffect(this.goal, glowTime);
+        }
+        if (this.startGlow) {
+            this.animateGlowEffect(this.startGlow, -glowTime);
         }
 
         this.renderer.render(this.scene, this.camera);
@@ -3774,6 +3890,7 @@ createObstacle(x, y, material, type) {
         this.isGameOver = true;
         this.controls.unlock();
         document.getElementById('game-over').style.display = 'block';
+        document.body.classList.add('menu-visible'); // Add menu-visible class
         
         // Show control buttons when game is over
         document.getElementById('mute-btn').style.display = 'flex';

@@ -96,7 +96,7 @@ canvas {
   text-align: center;
   width: 650px; /* Increased from 500px to avoid horizontal scroll */
   box-shadow: 0 0 30px rgba(255, 0, 0, 0.1);
-  z-index: 9999; /* Highest z-index to be above all elements including monster countdown */
+  z-index: 99999; /* Highest z-index to be above all elements including monster countdown */
 }
 
 .menu-options {
@@ -591,9 +591,18 @@ button:active {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  z-index: 100; /* Below the menu (200) */
+  z-index: 50; /* Below the menu (99999) */
   pointer-events: none;
   animation: countdown-appear 0.5s ease-out;
+}
+
+/* Hide countdown when menu is visible */
+#menu:not([style*="display: none"]) ~ #monster-countdown,
+#game-over:not([style*="display: none"]) ~ #monster-countdown,
+.menu-visible #monster-countdown {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
 }
 
 .countdown-number {

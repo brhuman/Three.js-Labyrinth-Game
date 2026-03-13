@@ -10,8 +10,8 @@ export class OptionsManager {
         this.defaults = {
             startingLevel: 1,
             difficulty: 'normal',
-            shadowQuality: 'low', // Low quality shadows instead of off
-            renderScale: 'balanced',
+            shadowQuality: 'high', // High quality shadows by default
+            renderScale: 'high', // High resolution by default
             effectsEnabled: true,
             masterVolume: 1.0,
             showFPS: false,
@@ -236,6 +236,16 @@ export class OptionsManager {
                 this.applyLanguage();
             });
         });
+        
+        // Reset settings button
+        const resetBtn = document.getElementById('reset-settings-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (confirm('Are you sure you want to reset all settings to defaults?')) {
+                    this.resetSettings();
+                }
+            });
+        }
     }
     
     updateUI() {
@@ -444,6 +454,12 @@ export class OptionsManager {
         if (this.game) {
             this.game.shadowQuality = this.settings.shadowQuality;
             this.game.updateMoonLightShadows(); // Update moon light shadows specifically
+            
+            // Force renderer update and recompile for shadows to take effect
+            if (this.game.renderer) {
+                this.game.renderer.shadowMap.needsUpdate = true;
+                this.game.renderer.compile(this.game.scene, this.game.camera);
+            }
         }
     }
     
@@ -517,5 +533,29 @@ export class OptionsManager {
     
     getAudioGroups() {
         return { ...this.settings.audioGroups };
+    }
+    
+    // Reset all settings to defaults
+    resetSettings() {
+        this.settings = { ...this.defaults };
+        this.saveSettings();
+        this.updateUI();
+        this.applySettings();
+        
+        // Update game instance settings
+        if (this.game) {
+            this.game.startingLevel = this.settings.startingLevel;
+            this.game.difficulty = this.settings.difficulty;
+            this.game.shadowQuality = this.settings.shadowQuality;
+            this.game.renderScale = this.settings.renderScale;
+            this.game.effectsEnabled = this.settings.effectsEnabled;
+            this.game.masterVolume = this.settings.masterVolume;
+            this.game.showFPS = this.settings.showFPS;
+            this.game.fogOfWar = this.settings.fogOfWar;
+            this.game.currentLanguage = this.settings.language;
+            this.game.audioGroups = this.settings.audioGroups;
+        }
+        
+        console.log('Settings reset to defaults');
     }
 }
