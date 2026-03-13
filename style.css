@@ -92,7 +92,7 @@ canvas {
   left: 50%;
   transform: translate(-50%, -50%);
   text-align: center;
-  width: 500px;
+  width: 650px; /* Increased from 500px to avoid horizontal scroll */
   box-shadow: 0 0 30px rgba(255, 0, 0, 0.1);
 }
 
@@ -136,6 +136,35 @@ h1 {
   margin-top: 0;
   margin-bottom: 10px;
   font-size: 1.1rem;
+}
+
+.menu-page {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Custom Styled Scrollbar */
+.options-scroll-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.options-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.options-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--accent-color);
+  border-radius: 4px;
+  box-shadow: 0 0 10px var(--accent-color);
+}
+
+.options-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #ff5555;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .item-list {
@@ -742,6 +771,54 @@ button:hover {
   margin-top: 10px;
   font-size: 0.9rem;
   opacity: 0.7;
+}
+
+/* Settings Sections */
+.settings-section {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 15px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 15px;
+  transition: all 0.3s ease;
+}
+
+.settings-section:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Quality & Language Buttons */
+.quality-btn, .lang-btn {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 15px;
+  font-size: 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  margin-top: 0;
+}
+
+.quality-btn:hover, .lang-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.quality-btn.selected, .lang-btn.selected {
+  background: rgba(0, 187, 255, 0.2);
+  color: #00bbff;
+  border-color: #00bbff;
+  box-shadow: 0 0 15px rgba(0, 187, 255, 0.3);
+}
+
+/* Specific highlight for selected difficulty */
+.difficulty-btn.selected {
+  background: var(--accent-color);
+  color: #000;
+  box-shadow: 0 0 15px rgba(255, 51, 51, 0.4);
 }
 
 /* Level Selection Styles */

@@ -18,7 +18,15 @@
       <div class="blood-drop" style="position: absolute; left: 25%; top: -20px; width: 7px; height: 14px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.2s linear infinite 2s;"></div>
       <div class="blood-drop" style="position: absolute; left: 85%; top: -20px; width: 9px; height: 18px; background: linear-gradient(180deg, #cc0000, #8b0000); border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; animation: drop 3.8s linear infinite 2.5s;"></div>
       
-      <div style="margin-top: 50px; color: #8b0000; font-family: monospace; font-size: 14px; letter-spacing: 2px; z-index: 10;">LOADING...</div>
+      <div style="margin-top: 50px; color: #8b0000; font-family: monospace; font-size: 14px; letter-spacing: 2px; z-index: 10; font-weight: bold;" data-i18n="loading">LOADING...</div>
+      
+      <!-- Progress Bar Container -->
+      <div id="preloader-bar-container" style="width: 300px; height: 4px; background: rgba(139, 0, 0, 0.1); border-radius: 2px; margin-top: 15px; overflow: hidden; position: relative; border: 1px solid rgba(139, 0, 0, 0.2);">
+        <div id="preloader-bar-fill" style="width: 0%; height: 100%; background: linear-gradient(90deg, #ff0000, #8b0000); box-shadow: 0 0 10px #ff0000; transition: width 0.3s ease-out;"></div>
+      </div>
+      
+      <!-- Loading status text -->
+      <div id="loading-status" style="margin-top: 10px; color: rgba(139, 0, 0, 0.6); font-family: monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase;" data-i18n="initializing">Initializing...</div>
     </div>
 
     <style>
@@ -39,94 +47,175 @@
       <source src="/sounds/scream3.mp3" type="audio/mpeg">
     </audio>
     <div id="ui-overlay">
+      <div id="fps-display" style="position: absolute; top: 10px; right: 10px; color: #44ff44; font-family: monospace; font-size: 14px; pointer-events: none; display: none; z-index: 100; text-shadow: 0 0 5px rgba(68, 255, 68, 0.5);">FPS: 60</div>
       <div id="menu" class="glass-panel">
-        <h1>DEATH LABYRINTH</h1>
-        <p>You have awakened in an endlessly shifting maze.<br>Find the exit before <em>it</em> finds you.</p>
+        <h1 id="menu-title">DES WEBERIND</h1>
 
-        <div class="lore-box">
-          <h3>Survival Guide</h3>
-          <p>Explore the darkness, but beware the footsteps. If the monster catches you, you die.</p>
-          <div class="item-list">
-
-            <div class="item"><span class="item-icon" style="color:#0088ff;">🔵</span> <span><strong>SPD:</strong> Move faster</span></div>
-            <div class="item"><span class="item-icon" style="color:#aaaa00;">🟡</span> <span><strong>SLW:</strong> Slow the monster</span></div>
-            <div class="item"><span class="item-icon" style="color:#22ff22;">🔋</span> <span><strong>BAT:</strong> +25% Flashlight</span></div>
-            <div class="item"><span class="item-icon">🪵</span> <span><strong>Beams:</strong> Press 'C' to crouch</span></div>
-
+        <!-- Main Menu Page -->
+        <div id="menu-main" class="menu-page">
+          <p id="menu-subtitle" data-i18n="subtitle">You have awakened in an endlessly shifting maze.<br>Find the exit before <em>it</em> finds you.</p>
+          <div class="menu-actions" style="display: flex; flex-direction: column; gap: 10px; align-items: center; margin-top: 20px;">
+            <button id="start-btn" data-i18n="enter_maze" style="width: 100%;">ENTER THE MAZE</button>
+            <button id="continue-btn" data-i18n="continue" style="width: 100%; display: none;">CONTINUE</button>
+            <button id="options-btn" data-i18n="options" style="width: 100%;">OPTIONS</button>
+            <button id="help-btn" data-i18n="help" style="width: 100%;">HELP</button>
           </div>
         </div>
 
-        <div class="level-selection" style="margin-bottom: 20px;">
-          <h3>Starting Level</h3>
-          <div class="level-selector-container">
-            <button id="level-dec" class="level-nav-btn">−</button>
-            <div class="level-display">LEVEL <span id="starting-level-val">1</span></div>
-            <button id="level-inc" class="level-nav-btn">+</button>
+        <!-- Options Menu Page -->
+        <div id="menu-options" class="menu-page" style="display: none;">
+          <h2 data-i18n="options" style="color: #fff; margin-bottom: 20px;">OPTIONS</h2>
+          
+          <div class="options-scroll-container" style="max-height: 400px; overflow-y: auto; padding-right: 10px; text-align: left;">
+            
+            <!-- Game Settings -->
+            <div class="settings-section" style="margin-bottom: 20px;">
+              <h3 data-i18n="starting_level" style="color: #00bbff; font-size: 1rem; margin-bottom: 10px;">Starting Level</h3>
+              <div class="level-selector-container">
+                <button id="level-dec" class="level-nav-btn">−</button>
+                <div class="level-display"><span data-i18n="level">LEVEL</span> <span id="starting-level-val">1</span></div>
+                <button id="level-inc" class="level-nav-btn">+</button>
+              </div>
+            </div>
+
+            <div class="settings-section" style="margin-bottom: 20px;">
+              <h3 data-i18n="difficulty" style="color: #ff3333; font-size: 1rem; margin-bottom: 10px;">Difficulty</h3>
+              <div class="difficulty-buttons" style="display: flex; gap: 5px; justify-content: center; flex-wrap: wrap;">
+                <button class="difficulty-btn" data-difficulty="super_easy" data-i18n="super_easy">Super Easy</button>
+                <button class="difficulty-btn" data-difficulty="easy" data-i18n="easy">Easy</button>
+                <button class="difficulty-btn selected" data-difficulty="normal" data-i18n="normal">Normal</button>
+                <button class="difficulty-btn" data-difficulty="hard" data-i18n="hard">Hard</button>
+              </div>
+              <div class="difficulty-description" style="text-align: center; margin-top: 5px; font-size: 0.8rem; opacity: 0.7;">
+                <span data-i18n="monster_speed">Monster speed:</span> 100% (Normal)
+              </div>
+            </div>
+
+            <!-- Graphics Settings -->
+            <div class="settings-section" style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+              <h3 data-i18n="graphics_quality" style="color: #44ff44; font-size: 1rem; margin-bottom: 10px;">Graphics Quality</h3>
+              <div class="quality-buttons" style="display: flex; gap: 10px; justify-content: center;">
+                <button class="quality-btn" data-quality="low" data-i18n="low">Low</button>
+                <button class="quality-btn selected" data-quality="medium" data-i18n="medium">Medium</button>
+                <button class="quality-btn" data-quality="high" data-i18n="high">High</button>
+              </div>
+            </div>
+
+            <!-- Audio Settings -->
+            <div class="settings-section" style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+              <h3 data-i18n="master_volume" style="color: #ffcc00; font-size: 1rem; margin-bottom: 10px;">Master Volume</h3>
+              <input type="range" id="master-volume" min="0" max="1" step="0.01" value="1" style="width: 100%; accent-color: #ffcc00; cursor: pointer;">
+              
+              <div class="audio-toggles" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px;">
+                <div class="audio-toggle-item" style="display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="toggle-krick" checked style="cursor: pointer;">
+                  <label for="toggle-krick" data-i18n="sound_krick" style="font-size: 0.8rem; cursor: pointer;">Krick (Intro)</label>
+                </div>
+                <div class="audio-toggle-item" style="display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="toggle-monster" checked style="cursor: pointer;">
+                  <label for="toggle-monster" data-i18n="sound_monster" style="font-size: 0.8rem; cursor: pointer;">Monster Sounds</label>
+                </div>
+                <div class="audio-toggle-item" style="display: flex; align-items: center; gap: 8px;">
+                  <input type="checkbox" id="toggle-facula" checked style="cursor: pointer;">
+                  <label for="toggle-facula" data-i18n="sound_facula" style="font-size: 0.8rem; cursor: pointer;">Environment Sounds</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Technical Settings -->
+            <div class="settings-section" style="margin-bottom: 20px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <label for="fps-toggle" data-i18n="show_fps" style="cursor: pointer; font-size: 0.9rem;">Show FPS:</label>
+                  <input type="checkbox" id="fps-toggle" style="cursor: pointer; width: 18px; height: 18px;">
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <label for="fow-toggle" data-i18n="fog_of_war" style="cursor: pointer; font-size: 0.9rem;">Fog of War:</label>
+                  <input type="checkbox" id="fow-toggle" checked style="cursor: pointer; width: 18px; height: 18px;">
+                </div>
+              </div>
+            </div>
+
+            <!-- Language Settings -->
+            <div class="settings-section" style="margin-bottom: 10px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+              <h3 data-i18n="language" style="color: #fff; font-size: 1rem; margin-bottom: 10px;">Language</h3>
+              <div class="language-buttons" style="display: flex; gap: 10px; justify-content: center;">
+                <button class="lang-btn selected" data-lang="en">English</button>
+                <button class="lang-btn" data-lang="ru">Русский</button>
+                <button class="lang-btn" data-lang="ua">Українська</button>
+              </div>
+            </div>
+
           </div>
+
+          <button class="back-btn" data-i18n="back" style="margin-top: 15px; width: 100%;">BACK</button>
         </div>
 
-        <div class="difficulty-selection" style="margin-bottom: 20px;">
-          <h3>Difficulty</h3>
-          <div class="difficulty-buttons" style="display: flex; gap: 10px; justify-content: center;">
-            <button class="difficulty-btn" data-difficulty="super_easy">Super Easy</button>
-            <button class="difficulty-btn" data-difficulty="easy">Easy</button>
-            <button class="difficulty-btn selected" data-difficulty="normal">Normal</button>
-            <button class="difficulty-btn" data-difficulty="hard">Hard</button>
+        <!-- Help Menu Page -->
+        <div id="menu-help" class="menu-page" style="display: none;">
+          <h2 data-i18n="help" style="color: #fff; margin-bottom: 20px;">HELP</h2>
+
+          <div class="lore-box">
+            <h3 data-i18n="game_description_title">Game Description</h3>
+            <p data-i18n="game_description">You have awakened in an endlessly shifting maze. Every level is generated procedurally. Find the exit portal to progress deeper into the labyrinth.</p>
           </div>
-          <div class="difficulty-description" style="text-align: center; margin-top: 10px; font-size: 0.9rem; opacity: 0.7;">
-            Monster speed: 100% (Normal)
+
+          <div class="lore-box">
+            <h3 data-i18n="survival_guide_title">Survival Guide</h3>
+            <div style="font-size: 0.85rem; line-height: 1.5;">
+              <p data-i18n="survival_guide_1">1. <strong>Find the Exit</strong>: Each maze has one exit. It glows with a faint light. Find it to survive.</p>
+              <p data-i18n="survival_guide_2">2. <strong>Avoid the Stalker</strong>: A creature lives here. If you hear heavy breathing or footsteps, it's close.</p>
+              <p data-i18n="survival_guide_3">3. <strong>Conserve Light</strong>: Your flashlight battery drains. Use it only when necessary. Find 🔋 to recharge.</p>
+              <p data-i18n="survival_guide_4">4. <strong>Crouch to Survive</strong>: Some areas have low beams. Press 'C' or 'Ctrl' to crouch and pass under them.</p>
+              <p data-i18n="survival_guide_5">5. <strong>Use Orbs</strong>: <span style="color:#0088ff;">🔵</span> increases your speed. <span style="color:#aaaa00;">🟡</span> slows down the monster.</p>
+            </div>
           </div>
-        </div>
 
-        <button id="start-btn">ENTER THE MAZE</button>
-
-
-        <div class="lore-box" style="margin-top: 16px;">
-          <h3>Controls</h3>
-          <div class="item-list" style="grid-template-columns: 1fr 1fr;">
-            <div class="item"><span class="item-icon">⬆</span> <span><strong>WASD</strong> — Move</span></div>
-            <div class="item"><span class="item-icon">🖱️</span> <span><strong>Mouse</strong> — Look</span></div>
-            <div class="item"><span class="item-icon">🦘</span> <span><strong>Space</strong> — Jump</span></div>
-            <div class="item"><span class="item-icon">🫣</span> <span><strong>C / Ctrl</strong> — Crouch</span></div>
-            <div class="item"><span class="item-icon">⏎</span> <span><strong>Enter</strong> — Start</span></div>
-            <div class="item"><span class="item-icon">🔇</span> <span><strong>M</strong> — Mute / Unmute</span></div>
-            <div class="item"><span class="item-icon">🔦</span> <span><strong>F</strong> — Flashlight</span></div>
-            <div class="item"><span class="item-icon">⛶</span> <span><strong>L</strong> — Fullscreen</span></div>
+          <div class="lore-box">
+            <h3 data-i18n="controls_title">Controls</h3>
+            <div class="item-list" style="grid-template-columns: 1fr 1fr; font-size: 0.8rem;">
+              <div class="item"><span class="item-icon">⬆</span> <span data-i18n="controls_wasd"><strong>WASD</strong> — Move</span></div>
+              <div class="item"><span class="item-icon">🖱️</span> <span data-i18n="controls_mouse"><strong>Mouse</strong> — Look</span></div>
+              <div class="item"><span class="item-icon">🦘</span> <span data-i18n="controls_space"><strong>Space</strong> — Jump</span></div>
+              <div class="item"><span class="item-icon">🫣</span> <span data-i18n="controls_crouch"><strong>C / Ctrl</strong> — Crouch</span></div>
+              <div class="item"><span class="item-icon">⏎</span> <span data-i18n="controls_enter"><strong>Enter</strong> — Start</span></div>
+              <div class="item"><span class="item-icon">🔇</span> <span data-i18n="controls_mute"><strong>M</strong> — Mute</span></div>
+              <div class="item"><span class="item-icon">🔦</span> <span data-i18n="controls_flashlight"><strong>F</strong> — Flashlight</span></div>
+              <div class="item"><span class="item-icon">⛶</span> <span data-i18n="controls_fullscreen"><strong>L</strong> — Fullscreen</span></div>
+              <div class="item"><span class="item-icon">⏸</span> <span data-i18n="controls_pause"><strong>Esc</strong> — Pause</span></div>
+            </div>
           </div>
-        </div>
 
-        <div class="menu-options" style="display: flex; align-items: center; justify-content: center; gap: 10px; pointer-events: auto; margin-top: 15px;">
-            <label for="fow-toggle" style="cursor: pointer; font-size: 0.8rem; opacity: 0.7;">Fog of War:</label>
-            <input type="checkbox" id="fow-toggle" checked style="cursor: pointer; width: 16px; height: 16px;">
+          <button class="back-btn" data-i18n="back" style="margin-top: 10px; width: 100%;">BACK</button>
         </div>
 
       </div>
 
       <div id="game-over" class="glass-panel" style="display: none;">
-        <h1 style="color: #ff3333; text-shadow: 0 0 15px rgba(255, 0, 0, 0.8); background: none; -webkit-text-fill-color: initial;">YOU DIED</h1>
-        <p style="color: #ffffff; font-size: 1.2rem; margin-bottom: 20px;">The monster caught you.</p>
+        <h1 data-i18n="you_died" style="color: #ff3333; text-shadow: 0 0 15px rgba(255, 0, 0, 0.8); background: none; -webkit-text-fill-color: initial;">YOU DIED</h1>
+        <p data-i18n="monster_caught" style="color: #ffffff; font-size: 1.2rem; margin-bottom: 20px;">The monster caught you.</p>
         
         <div class="death-stats" style="background: rgba(0, 0, 0, 0.3); padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 3px solid #ff3333;">
-          <h3 style="color: #ff3333; margin-top: 0; margin-bottom: 10px; font-size: 1.1rem;">FINAL STATISTICS</h3>
+          <h3 data-i18n="final_stats" style="color: #ff3333; margin-top: 0; margin-bottom: 10px; font-size: 1.1rem;">FINAL STATISTICS</h3>
           <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #cccccc;">Level Reached:</span>
+            <span data-i18n="level_reached" style="color: #cccccc;">Level Reached:</span>
             <span id="death-level" style="color: #ffffff; font-weight: bold;">1</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #cccccc;">Time Survived:</span>
+            <span data-i18n="time_survived" style="color: #cccccc;">Time Survived:</span>
             <span id="death-time" style="color: #ffffff; font-weight: bold;">00:00</span>
           </div>
           <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #cccccc;">Total Survival Time:</span>
+            <span data-i18n="total_time" style="color: #cccccc;">Total Survival Time:</span>
             <span id="total-death-time" style="color: #ffffff; font-weight: bold;">00:00</span>
           </div>
           <div style="display: flex; justify-content: space-between;">
-            <span style="color: #cccccc;">Mazes Completed:</span>
+            <span data-i18n="mazes_completed" style="color: #cccccc;">Mazes Completed:</span>
             <span id="death-mazes" style="color: #ffffff; font-weight: bold;">0</span>
           </div>
         </div>
         
-        <button id="restart-btn">TRY AGAIN</button>
+        <button id="restart-btn" data-i18n="try_again">TRY AGAIN</button>
       </div>
 
       <div id="mute-btn" class="glass-panel" style="display: none;">
@@ -141,7 +230,7 @@
           <canvas id="minimap"></canvas>
         </div>
         <div id="battery-container" class="glass-panel" style="margin-top: 10px; padding: 10px;">
-          <div style="font-size: 0.8rem; margin-bottom: 5px; color: #44ff44; font-weight: bold;">BATTERY</div>
+          <div style="font-size: 0.8rem; margin-bottom: 5px; color: #44ff44; font-weight: bold;" data-i18n="battery">BATTERY</div>
           <div style="width: 100%; height: 10px; background: rgba(0,0,0,0.5); border-radius: 5px; overflow: hidden; border: 1px solid rgba(68, 255, 68, 0.3);">
             <div id="battery-bar" style="width: 100%; height: 100%; background: linear-gradient(90deg, #22bb22, #44ff44); transition: width 0.3s ease;"></div>
           </div>
@@ -150,11 +239,11 @@
 
         <div class="glass-panel-group">
           <div class="glass-panel">
-            <div class="stats">Level: <span id="level">1</span></div>
+            <div class="stats"><span data-i18n="level">Level</span>: <span id="level">1</span></div>
           </div>
 
           <div class="glass-panel" style="display: none;">
-            <div class="stats">Time: <span id="timer">00:00</span></div>
+            <div class="stats"><span data-i18n="time">Time</span>: <span id="timer">00:00</span></div>
           </div>
           <div id="bonus-speed-indicator" class="glass-panel" style="display: none; border-color: #00ffff;">
             <div class="stats" style="color: #00ffff;">Speed Boost: <span id="bonus-speed-time">15s</span></div>
@@ -174,7 +263,7 @@
     <!-- Monster Countdown Display -->
     <div id="monster-countdown" class="monster-countdown" style="display: none;">
       <div class="countdown-number">10</div>
-      <div class="countdown-text">MONSTER SPAWNING</div>
+      <div class="countdown-text" data-i18n="monster_spawning">MONSTER SPAWNING</div>
     </div>
     
     <!-- Flashlight Hint -->

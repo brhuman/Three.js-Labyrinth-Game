@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Maze } from './maze.js';
 import { findPathBFS, getAccessibleArea } from './utils.js';
+import { translations } from './translations.js';
 
 class Game {
     constructor() {
@@ -41,7 +42,6 @@ class Game {
         this.minimapCanvas.width = this.minimapSize;
         this.minimapCanvas.height = this.minimapSize;
 
-        this.textureLoader = new THREE.TextureLoader();
         this.textures = {}; // Will be populated in init()
         
         // Monster
@@ -144,18 +144,41 @@ class Game {
         this.audioDebounceTime = {};
         this.audioDebounceDelay = 50; // ms for general audio
 
+        // Extended Settings System
+        this.currentLanguage = localStorage.getItem('language') || 'en';
+        this.graphicsQuality = localStorage.getItem('graphicsQuality') || 'medium';
+        this.showFPS = localStorage.getItem('showFPS') === 'true';
+        const savedVolume = localStorage.getItem('masterVolume');
+        this.masterVolume = (savedVolume !== null && !isNaN(parseFloat(savedVolume))) ? parseFloat(savedVolume) : 1.0;
+        this.audioGroups = {
+            krick: localStorage.getItem('audio_krick') !== 'false',
+            monster: localStorage.getItem('audio_monster') !== 'false',
+            facula: localStorage.getItem('audio_facula') !== 'false'
+        };
+
+        // Loading Progress
+        this.loadingManager = new THREE.LoadingManager();
+        this.textureLoader = new THREE.TextureLoader(this.loadingManager);
+        this.audioLoader = new THREE.AudioLoader(this.loadingManager);
+        
+        this.setupLoadingManager();
         this.init();
 
     }
 
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // Limit pixel ratio for performance
-        this.renderer.setClearColor(0x020502); // Match forest fog color
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        this.renderer.setClearColor(0x020502);
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFShadowMap; // Less expensive than PCFSoftShadowMap
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.powerPreference = "high-performance";
-        this.renderer.antialias = window.devicePixelRatio <= 1; // Disable AA on high DPI displays
+        this.renderer.antialias = window.devicePixelRatio <= 1;
+        
+        // Initial technical settings
+        this.applyGraphicsSettings(this.graphicsQuality);
+        this.applyLanguage(this.currentLanguage);
+        this.applyAudioSettings();
         
         // Set FPS limit to 144
         this.targetFPS = 144;
@@ -164,12 +187,11 @@ class Game {
         
         // Try to enable high refresh rate
         this.enableHighFPS = true;
-        this.displayRefreshRate = screen.refreshRate || 60; // Get actual display refresh rate
+        this.displayRefreshRate = 60; // Default fallback
         
         if (this.enableHighFPS) {
             // Try to unlock frame rate for high refresh displays
             this.renderer.setAnimationLoop(() => this.animate());
-            console.log(`Display refresh rate: ${this.displayRefreshRate}Hz, Target FPS: ${this.targetFPS}`);
         }
         
         document.body.appendChild(this.renderer.domElement);
@@ -346,6 +368,38 @@ class Game {
         const muteIcon = document.getElementById('mute-icon');
         if (muteIcon) muteIcon.textContent = this.isMuted ? '🔇' : '🔊';
 
+        const optionsBtn = document.getElementById('options-btn');
+        const helpBtn = document.getElementById('help-btn');
+        const backBtns = document.querySelectorAll('.back-btn');
+        const menuMain = document.getElementById('menu-main');
+        const menuOptions = document.getElementById('menu-options');
+        const menuHelp = document.getElementById('menu-help');
+        const continueBtn = document.getElementById('continue-btn');
+
+        const showPage = (page) => {
+            menuMain.style.display = 'none';
+            menuOptions.style.display = 'none';
+            menuHelp.style.display = 'none';
+            page.style.display = 'block';
+        };
+
+        if (optionsBtn) optionsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPage(menuOptions);
+        });
+
+        if (helpBtn) helpBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showPage(menuHelp);
+        });
+
+        backBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showPage(menuMain);
+            });
+        });
+
         const startBtn = document.getElementById('start-btn');
         const restartBtn = document.getElementById('restart-btn');
 
@@ -353,7 +407,8 @@ class Game {
             if (!this.gameStarted) {
                 this.gameStarted = true;
                 this.level = this.startingLevel; // Set level from selector
-                startBtn.innerText = "CONTINUE";
+                startBtn.style.display = 'none';
+                continueBtn.style.display = 'block';
                 this.startTime = Date.now();
             } else if (this.isPaused) {
                 // The 'lock' listener will handle the rest of the resume logic
@@ -415,6 +470,8 @@ class Game {
         };
 
         const toggleMute = this.toggleMute;
+
+        continueBtn.addEventListener('click', startGame);
 
         this.toggleFullscreen = () => {
             // Prevent rapid toggling that could cause freezes
@@ -509,6 +566,8 @@ class Game {
         this.setupDifficultySelection();
         // Level selection
         this.setupLevelSelection();
+        // Technical settings
+        this.setupSettingsListeners();
 
         startBtn.addEventListener('click', startGame);
         restartBtn.addEventListener('click', () => {
@@ -611,6 +670,9 @@ class Game {
                 this.lastUnlockTime = Date.now();
                 document.getElementById('menu').style.display = 'block';
                 
+                // Reset menu to main page on pause
+                showPage(menuMain);
+                
                 // Show control buttons when paused
                 document.getElementById('mute-btn').style.display = 'flex';
                 document.getElementById('fullscreen-btn').style.display = 'flex';
@@ -686,9 +748,14 @@ class Game {
         // Handle preloader scream audio with multiple attempts
         const preloaderScream = document.getElementById('preloader-scream');
         if (preloaderScream) {
-            preloaderScream.volume = 0.4;
+            preloaderScream.volume = 0.4 * this.masterVolume;
             preloaderScream.loop = true;
             
+            // Respect Krick setting
+            if (!this.audioGroups.krick) {
+                preloaderScream.volume = 0;
+            }
+
             // Try to play immediately
             const tryPlay = () => {
                 setTimeout(() => {
@@ -775,6 +842,238 @@ class Game {
         updateDifficulty(this.difficulty);
     }
 
+    setupLoadingManager() {
+        const barFill = document.getElementById('preloader-bar-fill');
+        const loadingStatus = document.getElementById('loading-status');
+        const preloaderScream = document.getElementById('preloader-scream');
+
+        this.loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+            const progress = (itemsLoaded / itemsTotal) * 100;
+            if (barFill) barFill.style.width = `${progress}%`;
+            if (loadingStatus) {
+                const fileName = url.split('/').pop();
+                loadingStatus.textContent = `Loading ${fileName}... (${Math.round(progress)}%)`;
+            }
+        };
+
+        this.loadingManager.onLoad = () => {
+            if (loadingStatus) loadingStatus.textContent = "READY TO ENTER";
+            
+            const preloader = document.getElementById('preloader');
+            if (preloader) {
+                preloader.style.animation = 'fadeOut 1s ease-in-out forwards';
+                setTimeout(() => {
+                    preloader.style.display = 'none';
+                    if (preloaderScream && !preloaderScream.paused) {
+                        preloaderScream.pause();
+                        preloaderScream.currentTime = 0;
+                    }
+                }, 1000);
+            }
+        };
+
+        this.loadingManager.onError = (url) => {
+            console.error('Error loading:', url);
+        };
+    }
+
+    applyLanguage(lang) {
+        this.currentLanguage = lang;
+        localStorage.setItem('language', lang);
+        
+        const dict = translations[lang] || translations.en;
+        
+        // Update all elements with data-i18n attribute
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (dict[key]) {
+                // If it contains HTML tags (like <em> or <strong>), use innerHTML
+                if (dict[key].includes('<')) {
+                    el.innerHTML = dict[key];
+                } else {
+                    el.textContent = dict[key];
+                }
+            }
+        });
+
+        // Special case for dynamic text like monster speed
+        const difficultyDescription = document.querySelector('.difficulty-description');
+        if (difficultyDescription) {
+            const speedPercentage = Math.round(this.difficultyMultipliers[this.difficulty] * 100);
+            const displayName = this.difficulty.replace('_', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            difficultyDescription.innerHTML = `<span data-i18n="monster_speed">${dict.monster_speed}</span> ${speedPercentage}% (${displayName})`;
+        }
+
+        // Update language button selection
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            if (btn.dataset.lang === lang) {
+                btn.classList.add('selected');
+            } else {
+                btn.classList.remove('selected');
+            }
+        });
+    }
+
+    applyGraphicsSettings(quality) {
+        this.graphicsQuality = quality;
+        localStorage.setItem('graphicsQuality', quality);
+
+        // Quality buttons state
+        document.querySelectorAll('.quality-btn').forEach(btn => {
+            if (btn.dataset.quality === quality) {
+                btn.classList.add('selected');
+            } else {
+                btn.classList.remove('selected');
+            }
+        });
+
+        if (!this.renderer) return;
+
+        switch (quality) {
+            case 'low':
+                this.renderer.shadowMap.enabled = false;
+                if (this.flashlight) this.flashlight.castShadow = false;
+                if (this.monsterLight) this.monsterLight.castShadow = false;
+                this.renderer.setPixelRatio(1);
+                if (this.stars) this.stars.visible = false;
+                break;
+            case 'medium':
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFShadowMap;
+                if (this.flashlight) {
+                    this.flashlight.castShadow = true;
+                    this.flashlight.shadow.mapSize.set(512, 512);
+                }
+                if (this.monsterLight) this.monsterLight.castShadow = true;
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2));
+                if (this.stars) {
+                    this.stars.visible = true;
+                    this.starMaterial.opacity = 0.5;
+                }
+                break;
+            case 'high':
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                if (this.flashlight) {
+                    this.flashlight.castShadow = true;
+                    this.flashlight.shadow.mapSize.set(1024, 1024);
+                }
+                if (this.monsterLight) this.monsterLight.castShadow = true;
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                if (this.stars) {
+                    this.stars.visible = true;
+                    this.starMaterial.opacity = 0.8;
+                }
+                break;
+        }
+
+        // Re-compile scene if game already started
+        if (this.gameStarted) {
+            this.renderer.compile(this.scene, this.camera);
+        }
+        console.log('applyGraphicsSettings finished');
+    }
+
+    applyAudioSettings() {
+        if (this.listener) {
+            this.listener.setMasterVolume(this.isMuted ? 0 : this.masterVolume);
+        }
+        
+        localStorage.setItem('masterVolume', this.masterVolume);
+        localStorage.setItem('audio_krick', this.audioGroups.krick);
+        localStorage.setItem('audio_monster', this.audioGroups.monster);
+        localStorage.setItem('audio_facula', this.audioGroups.facula);
+
+        // Update UI elements
+        const volumeSlider = document.getElementById('master-volume');
+        if (volumeSlider) volumeSlider.value = this.masterVolume;
+
+        const krickToggle = document.getElementById('toggle-krick');
+        if (krickToggle) krickToggle.checked = this.audioGroups.krick;
+
+        const monsterToggle = document.getElementById('toggle-monster');
+        if (monsterToggle) monsterToggle.checked = this.audioGroups.monster;
+
+        const faculaToggle = document.getElementById('toggle-facula');
+        if (faculaToggle) faculaToggle.checked = this.audioGroups.facula;
+
+        // Apply immediately to running sounds
+        const preloaderScream = document.getElementById('preloader-scream');
+        if (preloaderScream) {
+            const vol = this.audioGroups.krick ? 0.4 * this.masterVolume : 0;
+            if (!isNaN(vol)) {
+                preloaderScream.volume = vol;
+            } else {
+                preloaderScream.volume = 0;
+            }
+        }
+
+        if (this.monsterSound && !this.audioGroups.monster) {
+            this.monsterSound.setVolume(0);
+        } else if (this.monsterSound && this.monsterSpawned) {
+            this.monsterSound.setVolume(this.monsterVolume);
+        }
+
+        this.torchLights.forEach(t => {
+            if (t.fireSound) {
+                t.fireSound.setVolume(this.audioGroups.facula ? 0.8 : 0);
+            }
+        });
+    }
+
+    setupSettingsListeners() {
+        // Graphics hooks
+        document.querySelectorAll('.quality-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.applyGraphicsSettings(btn.dataset.quality);
+            });
+        });
+
+        // Audio hooks
+        const volumeSlider = document.getElementById('master-volume');
+        if (volumeSlider) volumeSlider.addEventListener('input', (e) => {
+            this.masterVolume = parseFloat(e.target.value);
+            this.applyAudioSettings();
+        });
+
+        const krickToggle = document.getElementById('toggle-krick');
+        if (krickToggle) krickToggle.addEventListener('change', (e) => {
+            this.audioGroups.krick = e.target.checked;
+            this.applyAudioSettings();
+        });
+
+        const monsterToggle = document.getElementById('toggle-monster');
+        if (monsterToggle) monsterToggle.addEventListener('change', (e) => {
+            this.audioGroups.monster = e.target.checked;
+            this.applyAudioSettings();
+        });
+
+        const faculaToggle = document.getElementById('toggle-facula');
+        if (faculaToggle) faculaToggle.addEventListener('change', (e) => {
+            this.audioGroups.facula = e.target.checked;
+            this.applyAudioSettings();
+        });
+
+        // FPS hook
+        const fpsToggle = document.getElementById('fps-toggle');
+        if (fpsToggle) {
+            fpsToggle.checked = this.showFPS;
+            fpsToggle.addEventListener('change', (e) => {
+                this.showFPS = e.target.checked;
+                localStorage.setItem('showFPS', this.showFPS);
+            });
+        }
+
+        // Language hooks
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.applyLanguage(btn.dataset.lang);
+            });
+        });
+    }
+
     setupLevelSelection() {
         const levelValSpan = document.getElementById('starting-level-val');
         const levelDecBtn = document.getElementById('level-dec');
@@ -806,33 +1105,10 @@ class Game {
     }
 
     initTextureLoading() {
-        // Track texture loading
-        let texturesLoaded = 0;
-        const totalTextures = 5; // brick, floor, moon, monster_face_1, monster_face_2
-        
-        const checkAllLoaded = () => {
-            texturesLoaded++;
-            if (texturesLoaded >= totalTextures) {
-                const preloader = document.getElementById('preloader');
-                if (preloader) {
-                    preloader.style.animation = 'fadeOut 1s ease-in-out';
-                    setTimeout(() => {
-                        preloader.style.display = 'none';
-                        const preloaderScream = document.getElementById('preloader-scream');
-                        if (preloaderScream && !preloaderScream.paused) {
-                            preloaderScream.pause();
-                            preloaderScream.currentTime = 0;
-                        }
-                    }, 1000);
-                }
-            }
-        };
-        
         const configTex = (url, repeatX, repeatY) => {
             return this.textureLoader.load(url, (tex) => {
                 tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                 if (repeatX) tex.repeat.set(repeatX, repeatY);
-                checkAllLoaded();
             });
         };
 
@@ -840,10 +1116,9 @@ class Game {
         this.textures.floor = configTex('/textures/floor.png', 10, 10);
         this.textures.moon = configTex('/textures/moon.png');
         
-        // Monster faces are tracked as well
         this.monsterTextures = [
-            this.textureLoader.load('/textures/monster_face_1.png', () => checkAllLoaded()),
-            this.textureLoader.load('/textures/monster_face_2.png', () => checkAllLoaded())
+            this.textureLoader.load('/textures/monster_face_1.png'),
+            this.textureLoader.load('/textures/monster_face_2.png')
         ];
     }
 
@@ -1963,13 +2238,19 @@ createObstacle(x, y, material, type) {
             this.prevTime = time;
             this.fpsFrameCount++;
 
-            // Update FPS counter every second for all map sizes
+            // Update FPS counter every second
             if (time - this.fpsPrevTime >= 1000) {
                 const fps = this.fpsFrameCount;
                 this.fpsFrameCount = 0;
                 this.fpsPrevTime = time;
                 
-                // FPS display removed
+                const fpsDisplay = document.getElementById('fps-display');
+                if (fpsDisplay && this.showFPS) {
+                    fpsDisplay.style.display = 'block';
+                    fpsDisplay.textContent = `FPS: ${fps}`;
+                } else if (fpsDisplay) {
+                    fpsDisplay.style.display = 'none';
+                }
             }
 
         // Adaptive quality system removed (FPS-based)
@@ -3379,6 +3660,11 @@ createObstacle(x, y, material, type) {
     // Optimized audio utilities
     playAudioSafely(audio, audioKey = null) {
         if (!audio || this.isMuted) return;
+
+        // Group-based muting
+        if (audioKey === 'monster' && !this.audioGroups.monster) return;
+        if (audioKey === 'torch' && !this.audioGroups.facula) return;
+        if (audioKey === 'menu' && !this.audioGroups.facula) return; // Background menu music under facula/env
         
         // Debounce check if key provided
         if (audioKey) {
