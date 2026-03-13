@@ -1,6 +1,6 @@
-# ☠️ Death Labyrinth
+# ☠️ DEADLY LABYRINTH
 
-**[Live Demo: tthree-js-labyrinth-game.vercel.app](https://tthree-js-labyrinth-game.vercel.app/)**
+**[Live Demo: deadly-labyrinth.vercel.app](https://deadly-labyrinth.vercel.app/)**
 
 A dark, atmospheric first-person 3D maze game built in the browser with **Three.js** and **Vite**. Explore a procedurally generated stone labyrinth, collect keys, grab power-ups, and escape before the monster hunts you down.
 
@@ -10,45 +10,32 @@ A dark, atmospheric first-person 3D maze game built in the browser with **Three.
 
 ## 🎮 Gameplay
 
-- Navigate a **procedurally generated stone maze** that grows larger every level
-- **Collect all keys** to unlock the exit door
-- **Grab power-ups** — speed boost (blue) and monster slow-down (yellow)
-- **Survive the monster** — it spawns after a countdown and chases you through the maze
-- Reach the **exit portal** to advance to the next level
-- A **fog of war** minimap reveals only explored areas (toggle in menu)
+- Navigate a **procedurally generated stone maze** that grows larger every level.
+- **Collect all keys** to unlock the exit door.
+- **Grab power-ups** — speed boost (blue) and monster slow-down (yellow).
+- **Survive the monster** — it spawns after a countdown and chases you with improved collision-aware pathfinding.
+- Reach the **exit portal** to advance to the next level.
+- A **fog of war** minimap reveals only explored areas.
 
 ---
 
 ## ✨ Features
 
-### Visuals
-- Fully 3D first-person view with **real-time shadows** (4096×4096 shadow map)
-- **Dynamic night sky**: procedural star field (3000 points, twinkling), animated moon sprite, drifting cloud layer
-- **Torch lighting** along the walls with flickering flame animation
-- **Stone brick walls** with procedural texture and randomized height variation
-- Atmospheric **exponential fog** and dark ambient lighting
-- **Crouch beams** you must duck under with `C`
+### Visuals & Graphics Settings
+- **Advanced Graphics Menu**: Granular control over Resolution (Render Scale), Shadow Quality (Up to Ultra 2048x2048), and Particle Effects.
+- **Master Quality Presets**: Quick-switch between Low, Medium, High, and Ultra profiles.
+- **Dynamic night sky**: procedural star field, pulsing moon light, and drifting clouds.
+- **Atmospheric Lighting**: Wall torches with flickering animations and level-based aggressive darkening.
 
 ### Gameplay Systems
-- **Procedural maze generation** with guaranteed solvability (DFS algorithm), scales per level
-- **PointerLock controls** for immersive FPS mouse look
-- **Physics**: gravity, jumping, crouching, collision detection
-- **Monster AI**: pathfinds toward the player; positional 3D audio gets louder as it approaches
-- **Power-up system**: speed boost and monster slow-down with on-screen timers
-- **Key + locked door** puzzle system per level
+- **Radius-Based Monster AI**: The monster uses robust collision detection to avoid getting stuck on corners and a recovery system for complex geometry.
+- **Procedural Level Design**: Mazes scale in size and complexity as level increases.
+- **Survival Mechanics**: Flashlight battery management, crouching under low beams, and spatial 3D audio cues.
 
 ### Audio
-- **3D positional monster sound** — audible up to 210 units, gets louder as it approaches
-- **Generative demon howl synthesizer**: pitch-sweeping wails with vibrato, distortion, and cave reverb — unique every time
-- **Scream on death**, footstep-style effects
-- Full **mute toggle** (button or `M` key)
-
-### Performance
-- Monster mesh **pre-built and cached** at startup — no freeze on spawn
-- Items toggled via `visible` flag instead of scene add/remove — no micro-freezes on pickup
-- Stars rendered in a **single draw call** via `THREE.Points`
-- Torch shadows **disabled** to keep FPS high (60–120 FPS on modern hardware)
-- **FPS counter** always visible in HUD
+- **3D positional monster sound** — audible up to 210 units.
+- **Generative synth**: pitch-sweeping demon wails — unique every time.
+- **Atmospheric SFX**: screams, footsteps, and environment ambiance.
 
 ---
 
@@ -62,7 +49,9 @@ A dark, atmospheric first-person 3D maze game built in the browser with **Three.
 | `C` / `Ctrl` | Crouch |
 | `Enter` | Start / Restart |
 | `M` | Mute / Unmute |
-| `F` | Fullscreen |
+| `F` | Flashlight |
+| `L` | Fullscreen |
+| `Esc` | Pause |
 
 ---
 
@@ -70,11 +59,10 @@ A dark, atmospheric first-person 3D maze game built in the browser with **Three.
 
 | Tool | Role |
 |------|------|
-| [Three.js](https://threejs.org) | 3D rendering, lighting, shadows, materials, audio |
-| [Vite](https://vitejs.dev) | Dev server & bundler |
-| Vanilla JS + DOM | UI, HUD, pointer lock |
-| Web Audio API | Generative positional monster sound |
-| [Vitest](https://vitest.dev) | Maze generation & gameplay unit tests |
+| [Three.js](https://threejs.org) | 3D engine, lighting, shadows, materials, audio |
+| [Vite](https://vitejs.dev) | Dev server & build tool |
+| Vanilla JS + CSS3 | Custom UI, Red-themed Labyrinth UI, responsive HUD |
+| Web Audio API | Generative positional audio |
 
 ---
 
@@ -84,14 +72,12 @@ A dark, atmospheric first-person 3D maze game built in the browser with **Three.
 # Install dependencies
 npm install
 
-# Start dev server (opens at http://localhost:5174)
+# Start dev server
 npm run dev
 
 # Run tests
 npm test
 ```
-
-> Requires a modern browser with WebGL2 and PointerLock API support (Chrome, Firefox, Edge).
 
 ---
 
@@ -99,12 +85,14 @@ npm test
 
 ```
 ├── index.html          # Entry point + HUD markup
-├── style.css           # All UI/HUD styles
+├── style.css           # Unified "Deadly Labyrinth" red theme styles
 ├── src/
-│   └── main.js         # Game engine (single-file, ~1700 lines)
+│   ├── main.js         # Core Game Engine
+│   ├── translations.js # Localization strings (EN, RU, UA)
+│   └── utils.js        # Pathfinding and math utilities
 ├── public/
-│   ├── textures/       # Moon, wall, cloud, key textures
-│   └── sounds/         # Monster ambient, scream SFX
+│   ├── textures/       # Environmental assets
+│   └── sounds/         # Audio assets
 └── gameplay_test.mjs   # Vitest gameplay tests
 ```
 
@@ -112,4 +100,4 @@ npm test
 
 ## 📜 License
 
-MIT — built for fun and learning. Feel free to fork and extend it.
+MIT — built for intensive first-person horror exploration.

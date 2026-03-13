@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { Maze } from './maze.js';
-import { findPathBFS, getAccessibleArea } from './utils.js';
+import { OptionsManager } from './options-manager.js';
+import { findPathAStar, getAccessibleArea } from './utils.js';
 import { translations } from './translations.js';
 
 class Game {
@@ -48,6 +49,7 @@ class Game {
         this.monster = null;
         this.isGameOver = false;
         this.monsterSpawned = false;
+        this.monsterTextures = [];
         this.basePlayerSpeed = 19.6; // Base player speed
         this.playerSpeed = this.basePlayerSpeed;
 
@@ -106,6 +108,8 @@ class Game {
         // Play time tracking
         this.totalPlayTime = parseFloat(localStorage.getItem('totalPlayTime')) || 0;
         this.sessionPlayTime = 0;
+        this.activeGameTime = 0; // Time spent actively playing (excluding pause)
+        this.gameStartTime = null; // Start time for current active game session
 
         // Monster pathfinding throttle
         this.monsterPath = [];
@@ -144,17 +148,20 @@ class Game {
         this.audioDebounceTime = {};
         this.audioDebounceDelay = 50; // ms for general audio
 
-        // Extended Settings System
-        this.currentLanguage = localStorage.getItem('language') || 'en';
-        this.graphicsQuality = localStorage.getItem('graphicsQuality') || 'medium';
-        this.showFPS = localStorage.getItem('showFPS') === 'true';
-        const savedVolume = localStorage.getItem('masterVolume');
-        this.masterVolume = (savedVolume !== null && !isNaN(parseFloat(savedVolume))) ? parseFloat(savedVolume) : 1.0;
-        this.audioGroups = {
-            krick: localStorage.getItem('audio_krick') !== 'false',
-            monster: localStorage.getItem('audio_monster') !== 'false',
-            facula: localStorage.getItem('audio_facula') !== 'false'
-        };
+        // Initialize Options Manager
+        this.optionsManager = new OptionsManager(this);
+        
+        // Set initial values from options manager
+        this.startingLevel = this.optionsManager.getStartingLevel();
+        this.difficulty = this.optionsManager.getDifficulty();
+        this.shadowQuality = this.optionsManager.getShadowQuality();
+        this.renderScale = this.optionsManager.getRenderScale();
+        this.effectsEnabled = this.optionsManager.getEffectsEnabled();
+        this.masterVolume = this.optionsManager.getMasterVolume();
+        this.showFPS = this.optionsManager.getShowFPS();
+        this.fogOfWar = this.optionsManager.getFogOfWar();
+        this.currentLanguage = this.optionsManager.getLanguage();
+        this.audioGroups = this.optionsManager.getAudioGroups();
 
         // Loading Progress
         this.loadingManager = new THREE.LoadingManager();
@@ -175,10 +182,11 @@ class Game {
         this.renderer.powerPreference = "high-performance";
         this.renderer.antialias = window.devicePixelRatio <= 1;
         
-        // Initial technical settings
-        this.applyGraphicsSettings(this.graphicsQuality);
-        this.applyLanguage(this.currentLanguage);
+        // Initial technical settings - now handled by OptionsManager
+        // this.applyLanguage(this.currentLanguage);
         this.applyAudioSettings();
+        this.toggleBloodDrops(true);
+        this.toggleMenuBackdrop(true);
         
         // Set FPS limit to 144
         this.targetFPS = 144;
@@ -203,8 +211,25 @@ class Game {
         this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.5, 20, Math.PI / 6, 0.5, 2);
         this.flashlight.position.set(0.3, -0.2, -0.2);
         this.flashlight.castShadow = true;
-        this.flashlight.shadow.mapSize.width = 512;
-        this.flashlight.shadow.mapSize.height = 512;
+        
+        // Flashlight shadow settings based on quality
+        let flashlightSize = 512;
+        let flashlightBias = -0.001;
+        
+        if (this.shadowQuality === 'medium') {
+            flashlightSize = 1024;
+            flashlightBias = -0.0007;
+        } else if (this.shadowQuality === 'high') {
+            flashlightSize = 1536;
+            flashlightBias = -0.0004;
+        } else if (this.shadowQuality === 'ultra') {
+            flashlightSize = 2048;
+            flashlightBias = -0.0001;
+        }
+        
+        this.flashlight.shadow.mapSize.width = flashlightSize;
+        this.flashlight.shadow.mapSize.height = flashlightSize;
+        this.flashlight.shadow.bias = flashlightBias;
         this.flashlight.visible = false; // Initially turned off
         this.camera.add(this.flashlight);
 
@@ -329,39 +354,43 @@ class Game {
             depthWrite: false
         });
         this.moon = new THREE.Sprite(moonMat);
-        this.moon.scale.set(20, 20, 1); // 3x smaller moon disc
+        this.moon.scale.set(30, 30, 1); // Increased scale for "closer" look
         this.moon.renderOrder = 1;
-        this.moon.position.set(200, 240, 200);
+        this.moon.position.set(0, 150, -250); // Moved closer and aligned with moonLight
         this.scene.add(this.moon);
 
         this.controls = new PointerLockControls(this.camera, document.body);
 
         // Pre-build the monster so spawning it later has zero cost
         this.initMonsterTextures();
-        this.buildMonsterMeshCache();
         
-        // Add monster to scene immediately but hide it to pre-warm all shaders and shadows
-        // This completely eliminates the lag spike when it "spawns" because the engine
-        // already knows about its material and geometry bounds within the scene.
-        this.monster = this.monsterMeshCache;
-        this.monster.visible = false;
-        
-        // Add a pulsing point light to the monster here as well
-        this.monsterLight = new THREE.PointLight(0xff0000, 2, 3);
-        this.monsterLight.castShadow = true;
-        this.monsterLight.shadow.bias = -0.001;
-        this.monster.add(this.monsterLight);
+        // Wait for textures to load before building cache
+        setTimeout(() => {
+            this.buildMonsterMeshCache();
+            
+            // Add monster to scene immediately but hide it to pre-warm all shaders and shadows
+            // This completely eliminates the lag spike when it "spawns" because the engine
+            // already knows about its material and geometry bounds within the scene.
+            this.monster = this.monsterMeshCache;
+            this.monster.visible = false;
+            
+            // Add a pulsing point light to the monster
+            this.monsterLight = new THREE.PointLight(0xff0000, 2, 3);
+            this.monsterLight.castShadow = true;
+            this.monsterLight.shadow.bias = -0.001;
+            this.monster.add(this.monsterLight);
 
-        // Pre-init monster sound to avoid audio-context freeze on first spawn
-        this.initMonsterSound();
-        if (this.monsterSound) {
-            this.monster.add(this.monsterSound);
-        }
+            // Pre-init monster sound to avoid audio-context freeze on first spawn
+            this.initMonsterSound();
+            if (this.monsterSound) {
+                this.monster.add(this.monsterSound);
+            }
+            
+            this.scene.add(this.monster);
+            this.renderer.compile(this.scene, this.camera);
+        }, 1000); // Wait 1 second for textures to load
         
-        this.scene.add(this.monster);
-        this.renderer.compile(this.scene, this.camera);
-
-        // Настраиваем освещение в зависимости от уровня
+        // Initial lighting setup based on level
         this.updateLighting();
 
         // Sync mute icon
@@ -376,11 +405,20 @@ class Game {
         const menuHelp = document.getElementById('menu-help');
         const continueBtn = document.getElementById('continue-btn');
 
+        const menuTitle = document.getElementById('menu-title');
+
         const showPage = (page) => {
             menuMain.style.display = 'none';
             menuOptions.style.display = 'none';
             menuHelp.style.display = 'none';
             page.style.display = 'block';
+            
+            // Hide game title in Options and Help menus, show in Main menu
+            if (page === menuMain) {
+                menuTitle.style.display = 'block';
+            } else {
+                menuTitle.style.display = 'none';
+            }
         };
 
         if (optionsBtn) optionsBtn.addEventListener('click', (e) => {
@@ -425,6 +463,10 @@ class Game {
             // Initial game start setup or level restart
             // (Timer and monster reset only if NOT resuming from pause)
             if (!this.isPaused) {
+                // Reset active game timer for new game
+                this.activeGameTime = 0;
+                this.gameStartTime = null;
+                
                 // Reset maze for new game
                 this.clearMaze();
                 this.buildMaze();
@@ -562,8 +604,11 @@ class Game {
             this.toggleFullscreen();
         });
 
-        // Difficulty selection
-        this.setupDifficultySelection();
+        // Difficulty selection - handled by OptionsManager
+        // setupDifficultySelection();
+        
+        // Checkbox buttons - handled by OptionsManager  
+        // setupCheckboxButtons();
         // Level selection
         this.setupLevelSelection();
         // Technical settings
@@ -590,6 +635,10 @@ class Game {
             // Hide control buttons when playing
             document.getElementById('mute-btn').style.display = 'none';
             document.getElementById('fullscreen-btn').style.display = 'none';
+            
+            // Hide menu effects during gameplay
+            this.toggleBloodDrops(false);
+            this.toggleMenuBackdrop(false);
             
             // Pre-warm audio context to prevent first-frame lag
             if (this.monsterSound && this.monsterSound.context.state === 'suspended') {
@@ -668,6 +717,10 @@ class Game {
                 this.isPaused = true;
                 this.pauseTime = Date.now();
                 this.lastUnlockTime = Date.now();
+                
+                // Stop active game time counting when paused
+                this.gameStartTime = null;
+                
                 document.getElementById('menu').style.display = 'block';
                 
                 // Reset menu to main page on pause
@@ -676,6 +729,10 @@ class Game {
                 // Show control buttons when paused
                 document.getElementById('mute-btn').style.display = 'flex';
                 document.getElementById('fullscreen-btn').style.display = 'flex';
+                
+                // Show menu effects when paused
+                this.toggleBloodDrops(true);
+                this.toggleMenuBackdrop(true);
                 
                 // Play menu music
                 if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
@@ -686,6 +743,9 @@ class Game {
                 this.isPaused = true;
                 this.pauseTime = Date.now();
                 this.lastUnlockTime = Date.now();
+                
+                // Stop active game time counting when paused
+                this.gameStartTime = null;
                 
                 // Show control buttons when toggling fullscreen
                 document.getElementById('mute-btn').style.display = 'flex';
@@ -802,46 +862,6 @@ class Game {
         }
     }
 
-    setupDifficultySelection() {
-        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
-        const difficultyDescription = document.querySelector('.difficulty-description');
-        
-        const updateDifficulty = (selectedDifficulty) => {
-            this.difficulty = selectedDifficulty;
-            
-            // Update button states
-            difficultyButtons.forEach(btn => {
-                if (btn.dataset.difficulty === selectedDifficulty) {
-                    btn.classList.add('selected');
-                } else {
-                    btn.classList.remove('selected');
-                }
-            });
-            
-            // Update description
-            const speedPercentage = Math.round(this.difficultyMultipliers[selectedDifficulty] * 100);
-            const displayName = selectedDifficulty.replace('_', ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-            difficultyDescription.textContent = `Monster speed: ${speedPercentage}% (${displayName})`;
-            
-            // Update monster speed if game is not started
-            if (!this.gameStarted) {
-                this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
-            }
-        };
-        
-        // Add click listeners to difficulty buttons
-        difficultyButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const difficulty = btn.dataset.difficulty;
-                updateDifficulty(difficulty);
-            });
-        });
-        
-        // Initialize with default difficulty
-        updateDifficulty(this.difficulty);
-    }
-
     setupLoadingManager() {
         const barFill = document.getElementById('preloader-bar-fill');
         const loadingStatus = document.getElementById('loading-status');
@@ -895,6 +915,11 @@ class Game {
                 }
             }
         });
+        
+        // Update document title
+        if (dict.game_title) {
+            document.title = `${dict.game_title} | 3D Maze`;
+        }
 
         // Special case for dynamic text like monster speed
         const difficultyDescription = document.querySelector('.difficulty-description');
@@ -904,74 +929,153 @@ class Game {
             difficultyDescription.innerHTML = `<span data-i18n="monster_speed">${dict.monster_speed}</span> ${speedPercentage}% (${displayName})`;
         }
 
-        // Update language button selection
-        document.querySelectorAll('.lang-btn').forEach(btn => {
-            if (btn.dataset.lang === lang) {
-                btn.classList.add('selected');
-            } else {
-                btn.classList.remove('selected');
-            }
-        });
+        // Update language button selection - now handled by OptionsManager
+        // document.querySelectorAll('.lang-btn').forEach(btn => {
+        //     btn.classList.toggle('selected', btn.dataset.lang === lang);
+        // });
     }
 
-    applyGraphicsSettings(quality) {
-        this.graphicsQuality = quality;
-        localStorage.setItem('graphicsQuality', quality);
+    // Toggle persistent blood drops visibility
+    toggleBloodDrops(visible) {
+        const container = document.getElementById('blood-drops-container');
+        if (container) {
+            container.classList.toggle('visible', visible);
+        }
+    }
 
-        // Quality buttons state
-        document.querySelectorAll('.quality-btn').forEach(btn => {
-            if (btn.dataset.quality === quality) {
-                btn.classList.add('selected');
-            } else {
-                btn.classList.remove('selected');
-            }
-        });
+    // Toggle menu backdrop for better focus
+    toggleMenuBackdrop(visible) {
+        const backdrop = document.getElementById('menu-backdrop');
+        if (backdrop) {
+            backdrop.classList.toggle('visible', visible);
+        }
+    }
 
+    // Graphics presets removed - using advanced granular settings only
+
+    // Apply individual graphics parameters (English comments)
+    applyGranularGraphics() {
         if (!this.renderer) return;
 
-        switch (quality) {
-            case 'low':
-                this.renderer.shadowMap.enabled = false;
-                if (this.flashlight) this.flashlight.castShadow = false;
-                if (this.monsterLight) this.monsterLight.castShadow = false;
-                this.renderer.setPixelRatio(1);
-                if (this.stars) this.stars.visible = false;
-                break;
-            case 'medium':
-                this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.PCFShadowMap;
-                if (this.flashlight) {
-                    this.flashlight.castShadow = true;
-                    this.flashlight.shadow.mapSize.set(512, 512);
-                }
-                if (this.monsterLight) this.monsterLight.castShadow = true;
-                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.2));
-                if (this.stars) {
-                    this.stars.visible = true;
-                    this.starMaterial.opacity = 0.5;
-                }
-                break;
-            case 'high':
-                this.renderer.shadowMap.enabled = true;
-                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                if (this.flashlight) {
-                    this.flashlight.castShadow = true;
-                    this.flashlight.shadow.mapSize.set(1024, 1024);
-                }
-                if (this.monsterLight) this.monsterLight.castShadow = true;
-                this.renderer.setPixelRatio(window.devicePixelRatio);
-                if (this.stars) {
-                    this.stars.visible = true;
-                    this.starMaterial.opacity = 0.8;
-                }
-                break;
+        localStorage.setItem('renderScale', this.renderScale);
+        localStorage.setItem('shadowQuality', this.shadowQuality);
+        localStorage.setItem('effectsEnabled', this.effectsEnabled);
+
+        // Update lighting to ensure moonLight has correct shadow settings
+        this.updateLighting();
+
+        // 1. Handle Resolution / Render Scale
+        let pixelRatio = 1;
+        switch (this.renderScale) {
+            case 'performance': pixelRatio = 0.5; break;      // 50% for max performance
+            case 'balanced': pixelRatio = 0.75; break;     // 75% for good performance
+            case 'high': pixelRatio = 1.0; break;          // 100% standard quality
+            case 'native': window.devicePixelRatio; break;    // 100% device resolution
+        }
+        
+        console.log(`[Resolution] Setting pixelRatio: ${pixelRatio} (DPR: ${window.devicePixelRatio}, Mode: ${this.renderScale})`);
+        this.renderer.setPixelRatio(pixelRatio);
+
+        // 2. Handle Shadow Quality
+        // Shadows are always enabled, only quality varies
+        this.renderer.shadowMap.enabled = true;
+        
+        // Set shadow map type: Ultra uses PCFSoft for maximum quality
+        this.renderer.shadowMap.type = (this.shadowQuality === 'ultra') 
+            ? THREE.PCFSoftShadowMap 
+            : THREE.PCFShadowMap;
+
+        const updateLightShadow = (light, size) => {
+            if (light) {
+                light.castShadow = true;
+                light.shadow.mapSize.set(size, size);
+                if (light.shadow.map) light.shadow.map.dispose();
+            }
+        };
+
+        let shadowSize = 256; // Low quality default
+        let shadowType = THREE.PCFShadowMap;
+        let shadowBias = -0.002; // More bias for low quality
+        let shadowRadius = 0.3;
+        let flashlightSize = 256;
+        let monsterSize = 128;
+        let frustumSize = 15;
+        let frustumDistance = 60;
+        
+        if (this.shadowQuality === 'low') {
+            shadowSize = 256;
+            shadowBias = -0.002;
+            shadowRadius = 0.3;
+            flashlightSize = 256;
+            monsterSize = 128;
+            frustumSize = 15;
+            frustumDistance = 60;
+        } else if (this.shadowQuality === 'medium') {
+            shadowSize = 1024;
+            shadowBias = -0.0007;
+            shadowRadius = 1;
+            flashlightSize = 1024;
+            monsterSize = 512;
+            frustumSize = 25;
+            frustumDistance = 100;
+        } else if (this.shadowQuality === 'high') {
+            shadowSize = 2048;
+            shadowType = THREE.PCFSoftShadowMap;
+            shadowBias = -0.0004;
+            shadowRadius = 1.5;
+            flashlightSize = 1536;
+            monsterSize = 1024;
+            frustumSize = 30;
+            frustumDistance = 120;
+        } else if (this.shadowQuality === 'ultra') {
+            shadowSize = 4096;
+            shadowType = THREE.PCFSoftShadowMap;
+            shadowBias = -0.0001;
+            shadowRadius = 2.5;
+            flashlightSize = 2048;
+            monsterSize = 1536;
+            frustumSize = 40;
+            frustumDistance = 160;
         }
 
-        // Re-compile scene if game already started
+        // Set shadow map type
+        this.renderer.shadowMap.type = shadowType;
+
+        updateLightShadow(this.flashlight, flashlightSize);
+        updateLightShadow(this.monsterLight, monsterSize);
+        updateLightShadow(this.moonLight, shadowSize);
+        
+        // Remove duplicate moon light updates - shadows are now static
+
+        // 3. Toggle visual effects
+        if (this.stars) this.stars.visible = this.effectsEnabled;
+        if (this.clouds1) this.clouds1.visible = this.effectsEnabled;
+        if (this.clouds2) this.clouds2.visible = this.effectsEnabled;
+
+        // Sync individual buttons in Options UI
+        this.updateAdvancedButtonsUI();
+        
+        // Final compile for consistency
         if (this.gameStarted) {
             this.renderer.compile(this.scene, this.camera);
         }
-        console.log('applyGraphicsSettings finished');
+    }
+
+    // Sync individual setting button states in the UI
+    updateAdvancedButtonsUI() {
+        document.querySelectorAll('.adv-btn').forEach(btn => {
+            const type = btn.dataset.type;
+            const val = btn.dataset.adv;
+            let isSelected = false;
+
+            // Skip shadow quality - handled by OptionsManager
+            if (type === 'shadow') return;
+            
+            if (type === 'resolution') isSelected = (this.renderScale === val);
+            if (type === 'effects') isSelected = (this.effectsEnabled ? (val === 'on') : (val === 'off'));
+
+            btn.classList.toggle('selected', isSelected);
+        });
     }
 
     applyAudioSettings() {
@@ -1022,13 +1126,13 @@ class Game {
     }
 
     setupSettingsListeners() {
-        // Graphics hooks
-        document.querySelectorAll('.quality-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.applyGraphicsSettings(btn.dataset.quality);
-            });
-        });
+        // Graphics hooks - now handled by OptionsManager
+        // document.querySelectorAll('.quality-btn').forEach(btn => {
+        //     btn.addEventListener('click', (e) => {
+        //         e.stopPropagation();
+        //         this.applyGraphicsSettings(btn.dataset.quality);
+        //     });
+        // });
 
         // Audio hooks
         const volumeSlider = document.getElementById('master-volume');
@@ -1065,11 +1169,36 @@ class Game {
             });
         }
 
-        // Language hooks
-        document.querySelectorAll('.lang-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.applyLanguage(btn.dataset.lang);
+        // Language hooks - now handled by OptionsManager
+        // document.querySelectorAll('.lang-btn').forEach(btn => {
+        //     btn.addEventListener('click', (e) => {
+        //         e.stopPropagation();
+        //         this.applyLanguage(btn.dataset.lang);
+        //     });
+        // });
+
+        // Advanced Graphics Toggle
+        const advToggle = document.getElementById('adv-settings-toggle');
+        const advContent = document.getElementById('adv-settings-content');
+        if (advToggle && advContent) {
+            advToggle.addEventListener('click', () => {
+                advContent.classList.toggle('open');
+                const icon = advToggle.querySelector('.toggle-icon');
+                if (icon) icon.textContent = advContent.classList.contains('open') ? '▲' : '▼';
+            });
+        }
+
+        // Advanced Settings Individual Buttons
+        document.querySelectorAll('.adv-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.dataset.type;
+                const val = btn.dataset.adv;
+
+                if (type === 'resolution') this.renderScale = val;
+                // Shadow quality is now handled by OptionsManager
+                if (type === 'effects') this.effectsEnabled = (val === 'on');
+                
+                this.applyGranularGraphics();
             });
         });
     }
@@ -1115,13 +1244,8 @@ class Game {
         this.textures.brick = configTex('/textures/brick.png', 1, 1);
         this.textures.floor = configTex('/textures/floor.png', 10, 10);
         this.textures.moon = configTex('/textures/moon.png');
-        
-        this.monsterTextures = [
-            this.textureLoader.load('/textures/monster_face_1.png'),
-            this.textureLoader.load('/textures/monster_face_2.png')
-        ];
     }
-
+    
     clearMaze() {
         try {
             // Remove all objects except camera and sky
@@ -1194,7 +1318,7 @@ class Game {
     }
 
     updateLighting() {
-        // Удаляем старое освещение если оно есть
+        // Remove old lights if present (English comments)
         const lightsToRemove = [];
         this.scene.traverse((object) => {
             if (object.isAmbientLight || object.isHemisphereLight || (this.moonLight && object === this.moonLight)) {
@@ -1206,11 +1330,10 @@ class Game {
             this.scene.remove(light);
         });
 
-        // Настраиваем освещение в зависимости от уровня
-
-        // Настраиваем освещение в зависимости от уровня (плавное затемнение)
-        // Рассчитываем фактор прогрессии (0 = уровень 1, 1 = уровень 15+)
-        const darkenFactor = Math.min(1.0, (this.level - 1) / 14);
+        // Configure lighting based on level (Smooth Darkening - L1 to L15+)
+        // Progression factor: 0 = L1, 1 = L5+.
+        // Capped at level 5 as requested (darken faster)
+        const darkenFactor = Math.min(1.0, (this.level - 1) / 4);
         
         // 1. Fog parameters
         const fogColor = 0x040804;
@@ -1238,51 +1361,137 @@ class Game {
         const hemiIntensity = 0.25 - (darkenFactor * 0.19);
         
         // 4. Moon light
-        // L1: 0xd8e8d8 (216, 232, 216) -> L15+: 0x90a090 (144, 160, 144)
-        const rM = Math.round(216 - (darkenFactor * (216 - 144)));
-        const gM = Math.round(232 - (darkenFactor * (232 - 160)));
-        const bM = Math.round(216 - (darkenFactor * (216 - 144)));
+        // L1: 0xd8e8d8 (216, 232, 216) -> L15+: 0x506050 (80, 96, 80)
+        const rM = Math.round(216 - (darkenFactor * (216 - 80)));
+        const gM = Math.round(232 - (darkenFactor * (232 - 96)));
+        const bM = Math.round(216 - (darkenFactor * (216 - 80)));
         const moonColor = (rM << 16) | (gM << 8) | bM;
-        // intensity: L1=1.5, L15+=0.5
-        const moonIntensity = 1.5 - (darkenFactor * 1.0);
+        // intensity: L1=1.5, L15+=0.3
+        const moonIntensity = 1.5 - (darkenFactor * 1.2);
+        this.baseMoonIntensity = moonIntensity; // Store for animation
 
-        // Обновляем туман
+        // Update fog settings
         this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
         this.renderer.setClearColor(fogColor);
 
-        // Создаем новое освещение
+        // Create new lights
         const ambientLight = new THREE.AmbientLight(ambientColor, ambientIntensity);
-        ambientLight.isAmbientLight = true; // Помечаем для последующего удаления
+        ambientLight.isAmbientLight = true; // Mark for future removal
         this.scene.add(ambientLight);
 
         const hemiLight = new THREE.HemisphereLight(hemiSkyColor, hemiGroundColor, hemiIntensity);
         this.scene.add(hemiLight);
 
         this.moonLight = new THREE.DirectionalLight(moonColor, moonIntensity);
-        this.moonLight.castShadow = true;
-        this.moonLight.shadow.mapSize.width = 512;
-        this.moonLight.shadow.mapSize.height = 512;
-        this.moonLight.shadow.bias = -0.0005;
-        this.moonLight.shadow.normalBias = 0.01;
-        this.moonLight.shadow.radius = 1;
-        this.moonLight.shadow.camera.near = 0.1;
-        this.moonLight.shadow.camera.far = 50;
-        this.updateSunFrustum();
+        this.moonLight.castShadow = true; // Always cast shadows now
+        
+        // Position moon at diagonal angle for interesting shadows
+        this.moonLight.position.set(100, 100, -100);
+        // Point moon light at maze center for dramatic diagonal shadows
+        this.moonLight.target.position.set(0, 0, 0);
+        this.scene.add(this.moonLight.target);
+        
+        // Initialize shadow settings based on current quality
+        this.updateMoonLightShadows();
         this.scene.add(this.moonLight);
     }
 
-    updateSunFrustum() {
-        const d = Math.min(this.mazeSize, 30); // Limit shadow frustum size for performance
-        this.moonLight.shadow.camera.left = -d;
-        this.moonLight.shadow.camera.right = d;
-        this.moonLight.shadow.camera.top = d;
-        this.moonLight.shadow.camera.bottom = -d;
+    updateMoonLightShadows() {
+        if (!this.moonLight) return;
+        
+        let shadowSize = 256;
+        let shadowBias = -0.002;
+        let shadowRadius = 0.3;
+        let frustumSize = 15;
+        let frustumDistance = 60;
+        let shadowType = THREE.PCFShadowMap;
+        
+        switch (this.shadowQuality) {
+            case 'low':
+                shadowSize = 256;
+                shadowBias = -0.002;
+                shadowRadius = 0.3;
+                frustumSize = 15;
+                frustumDistance = 60;
+                break;
+            case 'medium':
+                shadowSize = 1024;
+                shadowBias = -0.0007;
+                shadowRadius = 1;
+                frustumSize = 25;
+                frustumDistance = 100;
+                break;
+            case 'high':
+                shadowSize = 2048;
+                shadowType = THREE.PCFSoftShadowMap;
+                shadowBias = -0.0004;
+                shadowRadius = 1.5;
+                frustumSize = 30;
+                frustumDistance = 120;
+                break;
+            case 'ultra':
+                shadowSize = 4096;
+                shadowType = THREE.PCFSoftShadowMap;
+                shadowBias = -0.0001;
+                shadowRadius = 2.5;
+                frustumSize = 40;
+                frustumDistance = 160;
+                break;
+        }
+        
+        // Apply shadow settings
+        this.moonLight.shadow.mapSize.width = shadowSize;
+        this.moonLight.shadow.mapSize.height = shadowSize;
+        this.moonLight.shadow.bias = shadowBias;
+        this.moonLight.shadow.normalBias = shadowBias * 20;
+        this.moonLight.shadow.radius = shadowRadius;
         this.moonLight.shadow.camera.near = 0.1;
-        this.moonLight.shadow.camera.far = Math.min(50, d * 1.5); // Dynamic far plane
+        this.moonLight.shadow.camera.far = frustumDistance;
+        this.moonLight.shadow.camera.left = -frustumSize;
+        this.moonLight.shadow.camera.right = frustumSize;
+        this.moonLight.shadow.camera.top = frustumSize;
+        this.moonLight.shadow.camera.bottom = -frustumSize;
         this.moonLight.shadow.camera.updateProjectionMatrix();
-        // Optimized shadow map resolution
-        this.moonLight.shadow.mapSize.width = 512;
-        this.moonLight.shadow.mapSize.height = 512;
+        
+        // Update renderer shadow type
+        if (this.renderer) {
+            this.renderer.shadowMap.type = shadowType;
+        }
+    }
+
+    updateSunFrustum() {
+        if (!this.moonLight) return;
+        
+        // Dynamic frustum size based on shadow quality
+        let frustumSize = 20;
+        let frustumDistance = 80;
+        let shadowResolution = 512;
+        
+        if (this.shadowQuality === 'medium') {
+            frustumSize = 25;
+            frustumDistance = 100;
+            shadowResolution = 1024;
+        } else if (this.shadowQuality === 'high') {
+            frustumSize = 30;
+            frustumDistance = 120;
+            shadowResolution = 2048;
+        } else if (this.shadowQuality === 'ultra') {
+            frustumSize = 40;
+            frustumDistance = 160;
+            shadowResolution = 4096;
+        }
+        
+        this.moonLight.shadow.camera.left = -frustumSize;
+        this.moonLight.shadow.camera.right = frustumSize;
+        this.moonLight.shadow.camera.top = frustumSize;
+        this.moonLight.shadow.camera.bottom = -frustumSize;
+        this.moonLight.shadow.camera.near = 0.1;
+        this.moonLight.shadow.camera.far = frustumDistance;
+        this.moonLight.shadow.camera.updateProjectionMatrix();
+        
+        // Update shadow resolution
+        this.moonLight.shadow.mapSize.width = shadowResolution;
+        this.moonLight.shadow.mapSize.height = shadowResolution;
     }
 
     buildMaze() {
@@ -1299,7 +1508,7 @@ class Game {
             this.mazeSize++;
         }
         
-        this.updateSunFrustum();
+        // Remove updateSunFrustum() call - shadows are now static
         const mazeGen = new Maze(this.mazeSize, this.mazeSize);
         this.grid = mazeGen.generate();
         
@@ -1426,7 +1635,7 @@ class Game {
 
         // Find main path from start to exit
         const startPathX = 0, startPathY = 1;
-        const mainPath = findPathBFS(this.grid, this.mazeSize, this.mazeSize, exitX, exitZ, startPathX, startPathY); // Reverse to get from exit to start
+        const mainPath = findPathAStar(this.grid, this.mazeSize, this.mazeSize, exitX, exitZ, startPathX, startPathY); // Reverse to get from exit to start
         
 
 
@@ -1540,6 +1749,7 @@ class Game {
         });
         this.goal = new THREE.Mesh(floorGlowGeometry, floorGlowMaterial);
         this.goal.position.set(exitX, 0.025, exitZ); // Slightly above floor
+        this.scene.add(this.goal); // Add goal to scene!
         
         // Add green point light for better visibility
         this.goalLight = new THREE.PointLight(0x00ff00, 3, 10);
@@ -1549,15 +1759,14 @@ class Game {
         document.getElementById('level').textContent = this.level;
 
         this.camera.position.set(0, this.baseHeight, 1);
-        this.camera.lookAt(2, this.baseHeight, 1); // Смотрим дальше в лабиринт
+        this.camera.lookAt(2, this.baseHeight, 1); // Look further into the maze
     }
 
     createDoor(x, z, isOpen, exitSide = null) {
         const doorMaterial = new THREE.MeshPhongMaterial({ 
             map: this.textures.floor,
             color: isOpen ? 0x00ff00 : 0x885533, // Green tint for open doors, dark wood for closed
-            emissive: isOpen ? 0x00ff00 : 0x000000, // Green glow for open doors
-            emissiveIntensity: isOpen ? 0.3 : 0,
+            emissive: 0x000000, // No emissive for doors
             shininess: 10
         }); 
         
@@ -1835,7 +2044,7 @@ class Game {
         const group = new THREE.Group();
         // Battery body
         const bodyGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.25, 8);
-        const bodyMat = new THREE.MeshPhongMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.6 });
+        const bodyMat = new THREE.MeshPhongMaterial({ color: 0x00ff00 });
         const body = new THREE.Mesh(bodyGeo, bodyMat);
         group.add(body);
 
@@ -1847,7 +2056,7 @@ class Game {
         group.add(cap);
 
         // Add percentage text above battery
-        const percentTex = this.createCoinTexture('+25%', '#00ff00');
+        const percentTex = this.createCoinTexture('+25%', '#ffffff');
         const textGeo = new THREE.PlaneGeometry(0.3, 0.1);
         const textMat = new THREE.MeshBasicMaterial({ 
             map: percentTex, 
@@ -2378,16 +2587,7 @@ createObstacle(x, y, material, type) {
 
             // FPS calculation removed
 
-        // Move the moon slowly
-        if (this.moonLight) {
-            const sunSpeed = 0.0000169; // 30% faster than 0.000013
-            this.moonLight.position.x = Math.sin(time * sunSpeed) * 30;
-            this.moonLight.position.z = Math.cos(time * sunSpeed) * 30;
-            this.moonLight.position.y = 40;
-            if (this.moon) {
-                this.moon.position.copy(this.moonLight.position);
-            }
-        }
+        // Moon movement and animation completely stopped - light is now static
 
 
         if (this.controls.isLocked && !this.isGameOver) {
@@ -2631,6 +2831,23 @@ createObstacle(x, y, material, type) {
 
             if (this.startTime) {
                 this.sessionPlayTime = Date.now() - this.startTime + this.totalPausedDuration;
+                
+                // Track active game time (only when controls are locked and game is not over)
+                if (this.controls.isLocked && !this.isGameOver) {
+                    if (!this.gameStartTime) {
+                        this.gameStartTime = Date.now();
+                    }
+                    this.activeGameTime = Date.now() - this.gameStartTime;
+                    
+                    // Update timer display with active game time
+                    const timerElement = document.getElementById('timer');
+                    if (timerElement) {
+                        const activeSeconds = Math.floor(this.activeGameTime / 1000);
+                        const minutes = Math.floor(activeSeconds / 60);
+                        const seconds = activeSeconds % 60;
+                        timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                }
             }
         }
 
@@ -2650,10 +2867,51 @@ createObstacle(x, y, material, type) {
 
     spawnMonster() {
         if (this.monsterSpawned) return;
+        
+        // Check if monster is created yet (it might still be loading)
+        if (!this.monster) {
+            console.warn('Monster spawn attempted but monster not created yet, retrying in 500ms...');
+            setTimeout(() => this.spawnMonster(), 500);
+            return;
+        }
 
-        // Monster is already in the scene from init, just unhide and position
-        this.monster.position.set(0, 0.5, 1);
+        console.log('=== MONSTER SPAWN START ===');
+        console.log('Monster object:', this.monster);
+        console.log('Monster position before:', this.monster.position);
+        console.log('Monster visible before:', this.monster.visible);
+        console.log('Monster children count:', this.monster.children.length);
+
+        // Spawn monster at player start position
+        this.monster.position.set(0, 0.8, 1);
         this.monster.visible = true;
+        
+        // Force all children to be visible
+        this.monster.traverse((child) => {
+            child.visible = true;
+            if (child.material) {
+                console.log('Child material:', child.material.type, 'visible:', child.visible);
+            }
+        });
+        
+        console.log('✓ Monster spawned!');
+        console.log('  - Position:', this.monster.position.x, this.monster.position.y, this.monster.position.z);
+        console.log('  - Visible:', this.monster.visible);
+        console.log('  - World position:', this.monster.getWorldPosition(new THREE.Vector3()));
+        
+        console.log('✓ Monster spawned and made visible');
+        console.log('  - Position:', this.monster.position);
+        console.log('  - Visible:', this.monster.visible);
+        console.log('  - Children:', this.monster.children.length);
+        
+        // Log each child's material
+        this.monster.traverse((child) => {
+            if (child.isMesh) {
+                console.log(`  - Child mesh: ${child.name || 'unnamed'}`);
+                console.log(`    - Material: ${child.material}`);
+                console.log(`    - Material map: ${child.material.map}`);
+                console.log(`    - Visible: ${child.visible}`);
+            }
+        });
         
         // Reset pathfinding state when spawning
         this.monsterPath = [];
@@ -2671,7 +2929,7 @@ createObstacle(x, y, material, type) {
         const playerCellX = Math.floor(this.camera.position.x + 0.5);
         const playerCellZ = Math.floor(this.camera.position.z + 0.5);
         
-        const initialPath = findPathBFS(
+        const initialPath = findPathAStar(
             this.grid, this.mazeSize, this.mazeSize,
             currentCellX, currentCellZ,
             playerCellX, playerCellZ,
@@ -2709,37 +2967,32 @@ createObstacle(x, y, material, type) {
     }
 
     buildMonsterMeshCache() {
-        // Pre-build monster geometry ONCE at init.
-        // Restored full scary geometry and procedural texture.
-        const monsterGeo = new THREE.SphereGeometry(0.4, 32, 32);
-        
-        const pos = monsterGeo.attributes.position;
-        const v = new THREE.Vector3();
-        for (let i = 0; i < pos.count; i++) {
-            v.fromBufferAttribute(pos, i);
-            const noise = (
-                Math.sin(v.x * 12 + v.y * 15) * 0.03 + 
-                Math.cos(v.y * 18 + v.z * 11) * 0.03 +
-                Math.sin(v.z * 14 + v.x * 16) * 0.03
-            );
-            v.addScaledVector(v.clone().normalize(), noise);
-            pos.setXYZ(i, v.x, v.y, v.z);
-        }
-        pos.needsUpdate = true;
-        monsterGeo.computeVertexNormals();
-
-        if (this.monsterTextures.length === 0) {
-            this.initMonsterTextures();
-        }
-        const tex = this.monsterTextures[Math.floor(Math.random() * this.monsterTextures.length)];
-        const monsterMat = new THREE.MeshPhongMaterial({ 
-            map: tex,
-            emissive: 0xff0000,
-            emissiveIntensity: 0.1,
-            shininess: 2
+        // Larger monster sphere for better visibility
+        const geometry = new THREE.SphereGeometry(0.8, 32, 32);
+        const material = new THREE.MeshPhongMaterial({ 
+            color: 0xff0000,
+            emissive: 0xff0000,  // Bright red emissive
+            emissiveIntensity: 2.0,  // Much brighter
+            shininess: 100,
+            transparent: false,
+            opacity: 1.0
         });
-
-        this.monsterMeshCache = new THREE.Mesh(monsterGeo, monsterMat);
+        
+        this.monsterMeshCache = new THREE.Group();
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.castShadow = true;
+        this.monsterMeshCache.add(sphere);
+        
+        // Add an inner glow sphere for extra visibility
+        const glowGeo = new THREE.SphereGeometry(0.6, 16, 16);
+        const glowMat = new THREE.MeshBasicMaterial({
+            color: 0xff3333,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+        const glowSphere = new THREE.Mesh(glowGeo, glowMat);
+        this.monsterMeshCache.add(glowSphere);
     }
 
     spawnTorch(x, z) {
@@ -2867,8 +3120,34 @@ createObstacle(x, y, material, type) {
 
     initMonsterTextures() {
         // Load the two real terrifying monster faces, randomly pick one per spawn
-        this.monsterTextures.push(this.textureLoader.load('/textures/monster_face_1.png'));
-        this.monsterTextures.push(this.textureLoader.load('/textures/monster_face_2.png'));
+        console.log('=== MONSTER TEXTURE LOADING START ===');
+        
+        const onLoad1 = (texture) => {
+            console.log('✓ Monster texture 1 loaded:', texture);
+            console.log('  - Image:', texture.image);
+            console.log('  - Image src:', texture.image ? texture.image.src : 'undefined');
+            console.log('  - Dimensions:', texture.image ? `${texture.image.width}x${texture.image.height}` : 'no image');
+        };
+        
+        const onLoad2 = (texture) => {
+            console.log('✓ Monster texture 2 loaded:', texture);
+            console.log('  - Image:', texture.image);
+            console.log('  - Image src:', texture.image ? texture.image.src : 'undefined');
+            console.log('  - Dimensions:', texture.image ? `${texture.image.width}x${texture.image.height}` : 'no image');
+        };
+        
+        const onError = (error) => {
+            console.error('✗ Monster texture loading error:', error);
+        };
+        
+        const tex1 = this.textureLoader.load('/textures/monster_face_1.png', onLoad1, undefined, onError);
+        const tex2 = this.textureLoader.load('/textures/monster_face_2.png', onLoad2, undefined, onError);
+        
+        this.monsterTextures.push(tex1);
+        this.monsterTextures.push(tex2);
+        
+        console.log('Monster textures array length:', this.monsterTextures.length);
+        console.log('=== MONSTER TEXTURE LOADING END ===');
     }
 
     createWoodTexture() {
@@ -3121,6 +3400,13 @@ createObstacle(x, y, material, type) {
     updateMonsterPerformance() {
         const distance = this.camera.position.distanceTo(this.monster.position);
         
+        // DEBUG: Always keep monster visible for testing
+        // Comment out distance-based optimization for now
+        this.monster.visible = true;
+        this.monsterLight.intensity = 2;
+        this.monsterLight.castShadow = true;
+        
+        /* Original distance-based optimization - disabled for debugging
         // Aggressive optimization based on distance
         if (distance > 20) {
             // Far away - minimal rendering
@@ -3143,6 +3429,7 @@ createObstacle(x, y, material, type) {
             this.monsterLight.intensity = 2;
             this.monster.visible = true;
         }
+        */
     }
 
     updateMonster(delta) {
@@ -3202,13 +3489,16 @@ createObstacle(x, y, material, type) {
             } else {
                 // No line of sight - use pathfinding but update more frequently
                 const now = performance.now();
-                if (now - this.lastPathUpdateTime > 400) { // Reduced from 800ms for more responsive movement
+                // If we're seemingly stuck, update path immediately
+                const isLikelyStuck = this.monsterStuckTime > 0.5; 
+                
+                if (now - this.lastPathUpdateTime > (isLikelyStuck ? 100 : 250)) {
                     const currentCellX = Math.floor(this.monster.position.x + 0.5);
                     const currentCellZ = Math.floor(this.monster.position.z + 0.5);
                     const playerCellX = Math.floor(this.camera.position.x + 0.5);
                     const playerCellZ = Math.floor(this.camera.position.z + 0.5);
                     
-                    const newPath = findPathBFS(
+                    const newPath = findPathAStar(
                         this.grid, this.mazeSize, this.mazeSize,
                         currentCellX, currentCellZ,
                         playerCellX, playerCellZ,
@@ -3255,20 +3545,79 @@ createObstacle(x, y, material, type) {
                 const moveX = (moveDx / moveDist) * currentMonsterSpeed * delta;
                 const moveZ = (moveDz / moveDist) * currentMonsterSpeed * delta;
                 
-                // Check if new position would be valid (not in wall, but allow crouch beams)
-                const newX = this.monster.position.x + moveX;
-                const newZ = this.monster.position.z + moveZ;
-                const cellX = Math.floor(newX + 0.5);
-                const cellZ = Math.floor(newZ + 0.5);
-                
-                // Monster can pass through crouch beams (type 4) but not regular walls (type 1)
-                if (cellX >= 0 && cellX < this.mazeSize && cellZ >= 0 && cellZ < this.mazeSize && 
-                    (this.grid[cellZ][cellX] === 0 || this.grid[cellZ][cellX] === 4)) {
-                    this.monster.position.x = newX;
-                    this.monster.position.z = newZ;
+                // Track previous position to detect if we're actually moving
+                const oldX = this.monster.position.x;
+                const oldZ = this.monster.position.z;
+
+                // Radius-based collision check (monster is ~0.8 wide, so 0.3 radius is enough for sliding)
+                const monsterRadius = 0.3; 
+                const canMoveTo = (x, z) => {
+                    const checkX = Math.floor(x + 0.5);
+                    const checkZ = Math.floor(z + 0.5);
                     
-                    // Smooth rotation towards movement direction
-                    const angle = Math.atan2(moveDx, moveDz);
+                    // Basic bounds check
+                    if (checkX < 0 || checkX >= this.mazeSize || checkZ < 0 || checkZ >= this.mazeSize) return false;
+                    
+                    // Simple wall check at point
+                    if (this.grid[checkZ][checkX] === 1) return false;
+
+                    // Radius checks (simplified for better sliding)
+                    const offsets = [
+                        {x: monsterRadius, z: 0}, {x: -monsterRadius, z: 0},
+                        {x: 0, z: monsterRadius}, {x: 0, z: -monsterRadius}
+                    ];
+
+                    for (const off of offsets) {
+                        const cellX = Math.floor(x + off.x + 0.5);
+                        const cellZ = Math.floor(z + off.z + 0.5);
+                        if (cellX < 0 || cellX >= this.mazeSize || cellZ < 0 || cellZ >= this.mazeSize) return false;
+                        if (this.grid[cellZ][cellX] === 1) return false;
+                    }
+                    return true;
+                };
+
+                let moved = false;
+                // Try full movement first
+                if (canMoveTo(this.monster.position.x + moveX, this.monster.position.z + moveZ)) {
+                    this.monster.position.x += moveX;
+                    this.monster.position.z += moveZ;
+                    moved = true;
+                } else {
+                    // SLIDING: Try moving along one axis if the combined movement is blocked
+                    const canMoveX = canMoveTo(this.monster.position.x + moveX, this.monster.position.z);
+                    const canMoveZ = canMoveTo(this.monster.position.x, this.monster.position.z + moveZ);
+
+                    if (canMoveX) {
+                        this.monster.position.x += moveX * 1.1; // Slight speed boost to compensate for friction
+                        moved = true;
+                    }
+                    if (canMoveZ) {
+                        this.monster.position.z += moveZ * 1.1;
+                        moved = true;
+                    }
+                }
+
+                // Stuck detection and recovery
+                const distMoved = Math.sqrt(Math.pow(this.monster.position.x - oldX, 2) + Math.pow(this.monster.position.z - oldZ, 2));
+                if (distMoved < currentMonsterSpeed * delta * 0.2) { // Moving at < 20% intended speed
+                    this.monsterStuckTime = (this.monsterStuckTime || 0) + delta;
+                    if (this.monsterStuckTime > 1.0) { // Stuck for 1 second
+                        // Recovery: Nudge towards target or slightly away from walls
+                        const nudgeX = (targetX - this.monster.position.x) > 0 ? 0.05 : -0.05;
+                        const nudgeZ = (targetZ - this.monster.position.z) > 0 ? 0.05 : -0.05;
+                        if (canMoveTo(this.monster.position.x + nudgeX, this.monster.position.z)) this.monster.position.x += nudgeX;
+                        if (canMoveTo(this.monster.position.x, this.monster.position.z + nudgeZ)) this.monster.position.z += nudgeZ;
+                        
+                        // Force a path recalculation if far from player
+                        if (dist > 2.0) this.lastPathUpdateTime = 0;
+                    }
+                } else {
+                    this.monsterStuckTime = 0;
+                }
+                
+                // Smooth rotation towards movement direction (only if actually moving)
+                if (moved) {
+                    const angle = Math.atan2(this.monster.position.x - oldX, this.monster.position.z - oldZ);
                     const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
                     this.monster.quaternion.slerp(targetRotation, 0.15);
                 }
@@ -3359,22 +3708,34 @@ createObstacle(x, y, material, type) {
         const sx = x1 < x2 ? 1 : -1;
         const sz = z1 < z2 ? 1 : -1;
         let err = dx - dz;
-        let x = Math.floor(x1);
-        let z = Math.floor(z1);
+        let x = Math.floor(x1 + 0.5);
+        let z = Math.floor(z1 + 0.5);
         
         while (true) {
-            // Check current position
-            if (x >= 0 && x < this.mazeSize && z >= 0 && z < this.mazeSize) {
-                // Monster can see through crouch beams (type 4) but not regular walls (type 1)
-                if (this.grid[z][x] === 1) {
-                    return false; // Wall blocks line of sight
+            // Check current position and its neighbors (thick line check)
+            const cx = Math.floor(x + 0.5);
+            const cz = Math.floor(z + 0.5);
+            
+            // Check a 2x2 or 3x3 area around the point to ensure the monster fits
+            const radius = 0.3; // Check slightly around the point
+            const checkPoints = [
+                {x: x, z: z},
+                {x: x + radius, z: z}, {x: x - radius, z: z},
+                {x: x, z: z + radius}, {x: x, z: z - radius}
+            ];
+
+            for (const p of checkPoints) {
+                const px = Math.floor(p.x + 0.5);
+                const pz = Math.floor(p.z + 0.5);
+                if (px >= 0 && px < this.mazeSize && pz >= 0 && pz < this.mazeSize) {
+                    if (this.grid[pz][px] === 1) return false; // Wall blocks line of sight
+                } else {
+                    return false;
                 }
-            } else {
-                return false; // Out of bounds
             }
             
             // Check if we reached the target
-            if (Math.floor(x2) === x && Math.floor(z2) === z) {
+            if (Math.floor(x2 + 0.5) === cx && Math.floor(z2 + 0.5) === cz) {
                 return true;
             }
             
@@ -3430,18 +3791,20 @@ createObstacle(x, y, material, type) {
             const hrs = Math.floor(secondsTotal / 3600);
             const mins = Math.floor((secondsTotal % 3600) / 60);
             const secs = Math.floor(secondsTotal % 60);
-            let result = "";
-            if (hrs > 0) result += hrs.toString().padStart(2, '0') + ":";
-            result += mins.toString().padStart(2, '0') + ":" + secs.toString().padStart(2, '0');
+            
+            let result = '';
+            if (hrs > 0) result += `${hrs}:`;
+            result += `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
             return result;
         };
 
-        const sessionTimeString = formatTime(this.sessionPlayTime / 1000);
+        // Use active game time for "Time Survived" (excludes pause time)
+        const activeTimeString = formatTime(this.activeGameTime / 1000);
         const totalTimeString = formatTime(this.totalPlayTime);
         
         // Update death statistics
         document.getElementById('death-level').textContent = this.level;
-        document.getElementById('death-time').textContent = sessionTimeString;
+        document.getElementById('death-time').textContent = activeTimeString;
         document.getElementById('total-death-time').textContent = totalTimeString;
         document.getElementById('death-mazes').textContent = this.mazesCompleted;
         
@@ -3455,6 +3818,10 @@ createObstacle(x, y, material, type) {
         this.slowPowerupRemaining = 0;
         this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
         this.mazesCompleted = 0; // Reset completed mazes
+        
+        // Reset active game timer for next game
+        this.activeGameTime = 0;
+        this.gameStartTime = null;
         
         document.getElementById('monster-timer').textContent = "5.0s";
         document.getElementById('timer').textContent = "00:00";
