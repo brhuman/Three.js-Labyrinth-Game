@@ -96,7 +96,7 @@ canvas {
   text-align: center;
   width: 650px; /* Increased from 500px to avoid horizontal scroll */
   box-shadow: 0 0 30px rgba(255, 0, 0, 0.1);
-  z-index: 200; /* Higher than countdown */
+  z-index: 9999; /* Highest z-index to be above all elements including monster countdown */
 }
 
 .menu-options {

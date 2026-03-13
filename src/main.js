@@ -59,7 +59,7 @@ class Game {
             super_easy: 0.35, // 35% monster speed
             easy: 0.5,       // 50% monster speed
             normal: 0.8,     // 80% monster speed (original default)
-            hard: 1.0        // 100% monster speed
+            hard: 0.9        // 90% monster speed
         };
 
         // Effective player speed is playerSpeed / 10 (due to friction)

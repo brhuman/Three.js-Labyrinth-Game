@@ -281,7 +281,7 @@ export class OptionsManager {
                 'super_easy': 50,
                 'easy': 65,
                 'normal': 80,
-                'hard': 100
+                'hard': 90
             };
             const speed = speeds[this.settings.difficulty] || 80;
             const displayName = this.settings.difficulty.replace('_', ' ').split(' ').map(word => 
