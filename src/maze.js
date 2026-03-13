@@ -63,8 +63,7 @@ export class Maze {
         // 5. Ensure entrance and exit connectivity
         this.grid[1][0] = 0; // Entrance
         this.grid[1][1] = 0; 
-        this.grid[this.height - 2][this.width - 1] = 0; // Exit
-        this.grid[this.height - 2][this.width - 2] = 0;
+        this.grid[this.height - 2][this.width - 1] = 0; // Exit - only one cube
 
         return this.grid;
     }

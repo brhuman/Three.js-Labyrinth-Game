@@ -94,6 +94,12 @@ class Game {
         this.radarPowerupRemaining = 0; // New Tracker bonus
         this.monsterTrackerBeam = null;
         
+        // Red orbs for monster collection
+        this.redOrbs = [];
+        this.redOrbSpawnTimer = 0;
+        this.redOrbSpawnInterval = 15000; // Спавн каждые 15 секунд
+        this.maxRedOrbs = 5; // Максимум 5 шариков одновременно
+        
         // Jump physics refinement
         this.gravityValue = 12.0;
         this.jumpForce = 3.2;
@@ -131,6 +137,9 @@ class Game {
         this.flashlightOffSound = null;
         this.isMuted = localStorage.getItem('isMuted') === 'true';
         this.listener.setMasterVolume(this.isMuted ? 0 : 1);
+        
+        // Web Audio API для простых звуков
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
         this.isFullscreenToggling = false;
         this.gameStarted = false;
@@ -360,6 +369,8 @@ class Game {
         this.moon.renderOrder = 1;
         this.moon.position.set(0, 150, -250); // Moved closer and aligned with moonLight
         this.scene.add(this.moon);
+
+        // Removed volumetric fog - was causing visual artifacts outside level
 
         this.controls = new PointerLockControls(this.camera, document.body);
 
@@ -618,6 +629,14 @@ class Game {
         // Technical settings
         this.setupSettingsListeners();
 
+        // Initialize game
+        this.buildMaze();
+        this.animate();
+        
+        // Show control buttons in menu initially
+        document.getElementById('mute-btn').style.display = 'flex';
+        document.getElementById('fullscreen-btn').style.display = 'flex';
+
         startBtn.addEventListener('click', startGame);
         restartBtn.addEventListener('click', () => {
             location.reload();
@@ -775,6 +794,24 @@ class Game {
             });
         }
 
+        // Load flashlight sound
+        this.flashlightSoundBuffer = null;
+        audioLoader.load('/sounds/light.mp3', (buffer) => {
+            console.log('[Flashlight] Sound loaded successfully, duration:', buffer.duration);
+            this.flashlightSoundBuffer = buffer;
+            
+            // Set buffer for flashlight sounds if they already exist
+            if (this.flashlightOnSound && this.flashlightOffSound) {
+                console.log('[Flashlight] Setting buffer to existing sounds');
+                this.flashlightOnSound.setBuffer(buffer);
+                this.flashlightOffSound.setBuffer(buffer);
+                this.flashlightOnSound.setVolume(0.5);
+                this.flashlightOffSound.setVolume(0.3);
+            }
+        }, undefined, (err) => {
+            console.error('[Flashlight] Sound loading failed:', err);
+        });
+
         // Load fire sound for torches
         this.fireSoundBuffer = null;
         audioLoader.load('/sounds/fire.mp3', (buffer) => {
@@ -787,30 +824,6 @@ class Game {
             });
         });
 
-        // Load flashlight sound
-        this.flashlightSoundBuffer = null;
-        audioLoader.load('/sounds/light.mp3', (buffer) => {
-            this.flashlightSoundBuffer = buffer;
-            
-            // Set buffer for flashlight sounds if they already exist
-            if (this.flashlightOnSound && this.flashlightOffSound) {
-                this.flashlightOnSound.setBuffer(buffer);
-                this.flashlightOffSound.setBuffer(buffer);
-                this.flashlightOnSound.setVolume(0.5);
-                this.flashlightOffSound.setVolume(0.3);
-            }
-        });
-
-        // Initialize menu background music
-        this.initMenuBackgroundMusic();
-
-        this.buildMaze();
-        this.animate();
-        
-        // Show control buttons in menu initially
-        document.getElementById('mute-btn').style.display = 'flex';
-        document.getElementById('fullscreen-btn').style.display = 'flex';
-        
         // Handle preloader scream audio with multiple attempts
         const preloaderScream = document.getElementById('preloader-scream');
         if (preloaderScream) {
@@ -976,15 +989,16 @@ class Game {
             case 'performance': pixelRatio = 0.5; break;      // 50% for max performance
             case 'balanced': pixelRatio = 0.75; break;     // 75% for good performance
             case 'high': pixelRatio = 1.0; break;          // 100% standard quality
-            case 'native': window.devicePixelRatio; break;    // 100% device resolution
+            default: pixelRatio = 1.0; break;              // Default to high quality
         }
         
         console.log(`[Resolution] Setting pixelRatio: ${pixelRatio} (DPR: ${window.devicePixelRatio}, Mode: ${this.renderScale})`);
         this.renderer.setPixelRatio(pixelRatio);
 
         // 2. Handle Shadow Quality
-        // Shadows are always enabled, only quality varies
+        // ENABLED - Clean shadows
         this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         
         // Set shadow map type: Ultra uses PCFSoft for maximum quality
         this.renderer.shadowMap.type = (this.shadowQuality === 'ultra') 
@@ -1315,6 +1329,9 @@ class Game {
             this.startGlow = null;
             this.startGlowLight = null;
             this.torchLights = [];
+            
+            // Очищаем красные шарики
+            this.clearRedOrbs();
         } catch (error) {
             console.error('Error in clearMaze():', error);
             // Reset arrays even if disposal fails
@@ -1334,7 +1351,10 @@ class Game {
         // Remove old lights if present (English comments)
         const lightsToRemove = [];
         this.scene.traverse((object) => {
-            if (object.isAmbientLight || object.isHemisphereLight || (this.moonLight && object === this.moonLight)) {
+            if (object.isAmbientLight || object.isHemisphereLight || object.isPointLight || 
+                (this.moonLight && object === this.moonLight) ||
+                (this.moonGlow && object === this.moonGlow) ||
+                (this.moonAmbientGlow && object === this.moonAmbientGlow)) {
                 lightsToRemove.push(object);
             }
         });
@@ -1343,85 +1363,59 @@ class Game {
             this.scene.remove(light);
         });
 
-        // Configure lighting based on level (Smooth Darkening - L1 to L15+)
-        // Progression factor: 0 = L1, 1 = L5+.
-        // Increased darkening - first level 20% darker, faster progression
-        const darkenFactor = Math.min(1.0, (this.level - 1) / 3); // Changed from /4 to /3 for faster darkening
-        
-        // 1. Fog parameters - теперь более заметный с первого уровня
+        // 1. DYNAMIC FOG BASED ON LEVEL - Увеличивается с каждым уровнем
         const fogColor = 0x040804;
-        const fogNear = 2; // Увеличил с 0.5 до 2 для более заметного тумана
-        // fogFar: L1=15, L15+=3 - значительно более густой туман (было 20->5)
-        const fogFar = 15 - (darkenFactor * 12);
+        const baseFogNear = 2;
+        const baseFogFar = 15;
         
-        // 2. Ambient light (Color interpolates towards darker grey)
-        // L1: 0x808880 (128, 136, 128) -> L15+: 0x384038 (56, 64, 56) - 20% darker than before
-        const rA = Math.round(128 - (darkenFactor * (128 - 56)));
-        const gA = Math.round(136 - (darkenFactor * (136 - 64)));
-        const bA = Math.round(128 - (darkenFactor * (128 - 56)));
-        const ambientColor = (rA << 16) | (gA << 8) | bA;
-        // intensity: L1=0.40, L15+=0.15 - 20% darker than before
-        const ambientIntensity = 0.40 - (darkenFactor * 0.25);
+        // Увеличиваем плотность тумана с каждым уровнем
+        const levelMultiplier = Math.min(this.level * 0.15, 0.75); // Максимум 75% увеличение
+        const fogNear = baseFogNear - (levelMultiplier * 1.5);
+        const fogFar = baseFogFar - (levelMultiplier * 4);
         
-        // 3. Hemisphere light
-        // Sky L1: 0xa0c0df (160, 192, 223) -> L15+: 0x6080a0 (96, 128, 160) - 20% darker than before
-        const rH = Math.round(160 - (darkenFactor * (160 - 96)));
-        const gH = Math.round(192 - (darkenFactor * (192 - 128)));
-        const bH = Math.round(223 - (darkenFactor * (223 - 160)));
-        const hemiSkyColor = (rH << 16) | (gH << 8) | bH;
-        const hemiGroundColor = 0x101308;
-        // intensity: L1=0.20, L15+=0.05 - 20% darker than before
-        const hemiIntensity = 0.20 - (darkenFactor * 0.15);
-        
-        // 4. Moon light
-        // L1: 0xb0c0b0 (176, 192, 176) -> L15+: 0x405040 (64, 80, 64) - 20% darker than before
-        const rM = Math.round(176 - (darkenFactor * (176 - 64)));
-        const gM = Math.round(192 - (darkenFactor * (192 - 80)));
-        const bM = Math.round(176 - (darkenFactor * (176 - 64)));
-        const moonColor = (rM << 16) | (gM << 8) | bM;
-        // intensity: L1=1.2, L15+=0.24 - 20% darker than before
-        const moonIntensity = 1.2 - (darkenFactor * 0.96);
-        this.baseMoonIntensity = moonIntensity; // Store for animation
-
-        // Update fog settings
-        this.scene.fog = new THREE.Fog(fogColor, fogNear, fogFar);
+        this.scene.fog = new THREE.Fog(fogColor, Math.max(fogNear, 0.5), Math.max(fogFar, 5));
         this.renderer.setClearColor(fogColor);
 
-        // Create new lights
-        const ambientLight = new THREE.AmbientLight(ambientColor, ambientIntensity);
-        ambientLight.isAmbientLight = true; // Mark for future removal
+        // 2. Уменьшаем ambient light с уровнем (темнее становится)
+        const ambientIntensity = Math.max(0.4 - (this.level * 0.05), 0.15);
+        const ambientLight = new THREE.AmbientLight(0x404040, ambientIntensity);
+        ambientLight.isAmbientLight = true;
         this.scene.add(ambientLight);
 
-        const hemiLight = new THREE.HemisphereLight(hemiSkyColor, hemiGroundColor, hemiIntensity);
+        // 3. Hemisphere light тоже уменьшается с уровнем
+        const hemiIntensity = Math.max(0.3 - (this.level * 0.03), 0.1);
+        const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x2F4F2F, hemiIntensity);
         this.scene.add(hemiLight);
 
-        this.moonLight = new THREE.DirectionalLight(moonColor, moonIntensity);
-        this.moonLight.castShadow = true; // Always cast shadows now
-        this.moonLight.shadow.mapSize.width = 2048; // Higher resolution shadows
-        this.moonLight.shadow.mapSize.height = 2048;
-        this.moonLight.shadow.camera.near = 0.1;
-        this.moonLight.shadow.camera.far = 200;
-        this.moonLight.shadow.camera.left = -50;
-        this.moonLight.shadow.camera.right = 50;
-        this.moonLight.shadow.camera.top = 50;
-        this.moonLight.shadow.camera.bottom = -50;
-        this.moonLight.shadow.bias = -0.0005;
-        this.moonLight.shadow.radius = 1;
-        
-        // Position moon at diagonal angle for interesting shadows
-        this.moonLight.position.set(100, 100, -100);
-        // Point moon light at maze center for dramatic diagonal shadows
+        // 4. УЛУЧШЕННОЕ moon light с тенями и эффектом свечения
+        this.moonLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        this.moonLight.castShadow = true;
+        this.moonLight.position.set(0, 150, -250); // Same position as moon sprite
         this.moonLight.target.position.set(0, 0, 0);
         this.scene.add(this.moonLight.target);
-        
-        // Initialize shadow settings based on current quality
-        this.updateMoonLightShadows();
         this.scene.add(this.moonLight);
-        
-        // Compile scene to ensure shadows are properly initialized
-        if (this.renderer) {
-            this.renderer.compile(this.scene, this.camera);
+
+        // 5. ДОБАВЛЯЕМ MOON GLOW EFFECT (свечение от Луны)
+        if (this.moonGlow) {
+            this.scene.remove(this.moonGlow);
         }
+        
+        // Создаем мягкий свет для эффекта свечения Луны
+        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.3, 100);
+        this.moonGlow.position.set(0, 150, -250); // Такая же позиция как у Луны
+        this.moonGlow.decay = 0.5; // Медленное затухание для эффекта ореола
+        this.scene.add(this.moonGlow);
+
+        // 6. Добавляем дополнительный мягкий свет для атмосферного свечения
+        if (this.moonAmbientGlow) {
+            this.scene.remove(this.moonAmbientGlow);
+        }
+        
+        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.05);
+        this.scene.add(this.moonAmbientGlow);
+
+        // Обновляем настройки теней для Луны
+        this.updateMoonLightShadows();
     }
 
     updateMoonLightShadows() {
@@ -1487,6 +1481,250 @@ class Game {
         }
     }
 
+    createVolumetricFog() {
+        // Создаем систему частиц для объемной дымки (оптимизированная)
+        const fogParticleCount = 50; // Уменьшили с 200 до 50 для производительности
+        const fogPositions = new Float32Array(fogParticleCount * 3);
+        const fogSizes = new Float32Array(fogParticleCount);
+        const fogOpacities = new Float32Array(fogParticleCount);
+        
+        for (let i = 0; i < fogParticleCount; i++) {
+            // Распределяем частицы в радиусе от игрока
+            const angle = Math.random() * Math.PI * 2;
+            const radius = Math.random() * 20 + 8; // 8-28 единиц от игрока
+            const height = Math.random() * 2 - 0.5; // Низко над землей
+            
+            fogPositions[i * 3] = Math.cos(angle) * radius;
+            fogPositions[i * 3 + 1] = height;
+            fogPositions[i * 3 + 2] = Math.sin(angle) * radius;
+            
+            // Размеры частиц
+            fogSizes[i] = Math.random() * 3 + 2; // Чуть больше для видимости
+            
+            // Прозрачность зависит от уровня (больше уровень = больше дымки)
+            const baseOpacity = 0.03 + (this.level * 0.008);
+            fogOpacities[i] = Math.min(baseOpacity, 0.1); // Максимум 10% прозрачности
+        }
+        
+        const fogGeometry = new THREE.BufferGeometry();
+        fogGeometry.setAttribute('position', new THREE.BufferAttribute(fogPositions, 3));
+        fogGeometry.setAttribute('size', new THREE.BufferAttribute(fogSizes, 1));
+        fogGeometry.setAttribute('opacity', new THREE.BufferAttribute(fogOpacities, 1));
+        
+        // Создаем материал для дымки с более простым blending
+        const fogMaterial = new THREE.PointsMaterial({
+            size: 4,
+            transparent: true,
+            opacity: 0.4,
+            depthWrite: false,
+            blending: THREE.NormalBlending, // Менее ресурсоемкое чем AdditiveBlending
+            color: 0x87CEEB, // Голубоватый цвет для лунной дымки
+            fog: false // Частицы дымки не должны затуманиваться
+        });
+        
+        this.volumetricFog = new THREE.Points(fogGeometry, fogMaterial);
+        this.scene.add(this.volumetricFog);
+        
+        // Сохраняем исходные данные для анимации
+        this.fogPositions = fogPositions;
+        this.fogTime = 0;
+    }
+
+    updateVolumetricFog() {
+        if (!this.volumetricFog || !this.fogPositions) return;
+        
+        // Обновляем позицию всей системы частиц относительно камеры
+        if (this.camera) {
+            this.volumetricFog.position.copy(this.camera.position);
+            this.volumetricFog.position.y -= 0.5; // Смещаем немного ниже уровня глаз
+        }
+        
+        // Упрощенная анимация - обновляем реже для производительности
+        this.fogTime += 0.005; // Увеличили шаг анимации
+        
+        // Обновляем позиции частиц только каждый N-ный кадр
+        if (Math.floor(this.fogTime * 100) % 3 === 0) {
+            const positions = this.volumetricFog.geometry.attributes.position.array;
+            
+            for (let i = 0; i < positions.length; i += 3) {
+                // Медленное дрейфование частиц относительно локальной системы
+                positions[i] += Math.sin(this.fogTime + i) * 0.02;
+                positions[i + 2] += Math.cos(this.fogTime + i) * 0.02;
+                
+                // Возвращаем частицы в зону видимости если они ушли слишком далеко
+                const distFromPlayer = Math.sqrt(
+                    positions[i] * positions[i] + 
+                    positions[i + 2] * positions[i + 2]
+                );
+                
+                if (distFromPlayer > 30) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = 8 + Math.random() * 8;
+                    positions[i] = Math.cos(angle) * radius;
+                    positions[i + 2] = Math.sin(angle) * radius;
+                }
+            }
+            
+            this.volumetricFog.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Обновляем прозрачность в зависимости от уровня
+        const baseOpacity = Math.min(0.03 + (this.level * 0.008), 0.1);
+        this.volumetricFog.material.opacity = baseOpacity;
+    }
+
+    createRedOrb(x, z) {
+        // Создаем красный шарик среднего размера
+        const orbGeometry = new THREE.SphereGeometry(0.3, 16, 16); // Средний размер
+        const orbMaterial = new THREE.MeshPhongMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.8,
+            shininess: 100,
+            transparent: true,
+            opacity: 0.9
+        });
+        
+        const orb = new THREE.Mesh(orbGeometry, orbMaterial);
+        orb.position.set(x, 0.5, z);
+        orb.castShadow = true;
+        orb.receiveShadow = true;
+        
+        // Добавляем светящееся ядро
+        const glowGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff6666,
+            transparent: true,
+            opacity: 0.6,
+            blending: THREE.AdditiveBlending
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        orb.add(glow);
+        
+        // Добавляем точечный свет для эффекта свечения
+        const orbLight = new THREE.PointLight(0xff0000, 0.5, 3);
+        orbLight.position.set(0, 0, 0);
+        orb.add(orbLight);
+        
+        // Сохраняем данные о шарике
+        orb.userData = {
+            type: 'redOrb',
+            spawnTime: Date.now(),
+            floatOffset: Math.random() * Math.PI * 2
+        };
+        
+        this.scene.add(orb);
+        this.redOrbs.push(orb);
+        
+        return orb;
+    }
+
+    spawnRedOrbInMaze() {
+        if (this.redOrbs.length >= this.maxRedOrbs) return;
+        
+        // Ищем случайную свободную клетку в лабиринте
+        const attempts = 50;
+        for (let i = 0; i < attempts; i++) {
+            const x = Math.floor(Math.random() * (this.mazeSize - 2)) + 1;
+            const z = Math.floor(Math.random() * (this.mazeSize - 2)) + 1;
+            
+            // Проверяем что клетка свободна (не стена)
+            if (this.maze && this.maze.grid && this.maze.grid[z] && this.maze.grid[z][x] === 0) {
+                // Проверяем что там уже нет других объектов
+                const position = new THREE.Vector3(x, 0.5, z);
+                const tooClose = this.redOrbs.some(orb => 
+                    orb.position.distanceTo(position) < 2
+                );
+                
+                if (!tooClose) {
+                    this.createRedOrb(x, z);
+                    break;
+                }
+            }
+        }
+    }
+
+    updateRedOrbs(deltaTime) {
+        // Обновляем таймер спавна
+        if (this.monsterSpawned) {
+            this.redOrbSpawnTimer += deltaTime * 1000;
+            if (this.redOrbSpawnTimer >= this.redOrbSpawnInterval) {
+                this.redOrbSpawnTimer = 0;
+                this.spawnRedOrbInMaze();
+            }
+        }
+        
+        // Анимация и проверка сбора шариков монстром
+        const time = Date.now() * 0.001;
+        
+        for (let i = this.redOrbs.length - 1; i >= 0; i--) {
+            const orb = this.redOrbs[i];
+            
+            // Анимация парения
+            const floatY = Math.sin(time + orb.userData.floatOffset) * 0.1;
+            orb.position.y = 0.5 + floatY;
+            
+            // Вращение
+            orb.rotation.y += deltaTime * 2;
+            
+            // Проверка сбора монстром
+            if (this.monster && this.monster.visible) {
+                const distance = orb.position.distanceTo(this.monster.position);
+                if (distance < 1.5) { // Радиус сбора
+                    this.collectRedOrb(orb, i);
+                }
+            }
+        }
+    }
+
+    collectRedOrb(orb, index) {
+        // Удаляем шарик со сцены
+        this.scene.remove(orb);
+        this.redOrbs.splice(index, 1);
+        
+        // Увеличиваем скорость монстра на короткое время
+        if (this.monster) {
+            const originalSpeed = this.monsterSpeed;
+            this.monsterSpeed *= 1.5; // Увеличиваем скорость на 50%
+            
+            // Возвращаем исходную скорость через 10 секунд
+            setTimeout(() => {
+                this.monsterSpeed = originalSpeed;
+            }, 10000);
+        }
+        
+        // Воспроизводим звук сбора
+        this.playCollectOrbSound();
+    }
+
+    playCollectOrbSound() {
+        // Создаем простой звук сбора
+        if (this.audioContext && !this.isMuted) {
+            const oscillator = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+            
+            oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(400, this.audioContext.currentTime + 0.2);
+            
+            gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.2);
+            
+            oscillator.start(this.audioContext.currentTime);
+            oscillator.stop(this.audioContext.currentTime + 0.2);
+        }
+    }
+
+    clearRedOrbs() {
+        this.redOrbs.forEach(orb => {
+            this.scene.remove(orb);
+        });
+        this.redOrbs = [];
+        this.redOrbSpawnTimer = 0;
+    }
+
     updateSunFrustum() {
         if (!this.moonLight) return;
         
@@ -1522,7 +1760,7 @@ class Game {
         this.moonLight.shadow.mapSize.height = shadowResolution;
     }
 
-    createGlowEffect(x, z, color, lightColor, lightIntensity, lightDistance) {
+    createGlowEffect(x, z, color, lightColor, lightIntensity, lightDistance, enableParticles = true) {
         const glow = new THREE.Group();
         
         // Main glow layer - positioned exactly at floor level
@@ -1555,36 +1793,38 @@ class Game {
         core.position.set(0, -0.017, 0); // Same level as main glow
         glow.add(core);
         
-        // Create particles with consistent behavior
-        const particleCount = 6;
-        for (let i = 0; i < particleCount; i++) {
-            const particleGeometry = new THREE.SphereGeometry(0.014, 8, 8);
-            const particleMaterial = new THREE.MeshStandardMaterial({
-                color: color,
-                emissive: color,
-                emissiveIntensity: 1.5,
-                transparent: true,
-                opacity: 0.7
-            });
-            const particle = new THREE.Mesh(particleGeometry, particleMaterial);
-            
-            // Start ALL particles from exact center
-            particle.position.set(0, -0.017, 0);
-            
-            // Store animation data
-            particle.userData = {
-                angle: (i / particleCount) * Math.PI * 2,
-                baseRadius: 0,
-                spiralSpeed: 0.3,
-                riseSpeed: 0.15,
-                maxHeight: 1.4,
-                startTime: performance.now() + (i * 300),
-                glowPosition: { x: x, z: z },
-                particleIndex: i,
-                initialY: -0.017 // Store initial Y position
-            };
-            
-            glow.add(particle);
+        // Create particles only if enabled
+        if (enableParticles) {
+            const particleCount = 6;
+            for (let i = 0; i < particleCount; i++) {
+                const particleGeometry = new THREE.SphereGeometry(0.014, 8, 8);
+                const particleMaterial = new THREE.MeshStandardMaterial({
+                    color: color,
+                    emissive: color,
+                    emissiveIntensity: 1.5,
+                    transparent: true,
+                    opacity: 0.7
+                });
+                const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+                
+                // Start ALL particles from exact center
+                particle.position.set(0, -0.017, 0);
+                
+                // Store animation data
+                particle.userData = {
+                    angle: (i / particleCount) * Math.PI * 2,
+                    baseRadius: 0,
+                    spiralSpeed: 0.3,
+                    riseSpeed: 0.15,
+                    maxHeight: 1.4,
+                    startTime: performance.now() + (i * 300),
+                    glowPosition: { x: x, z: z },
+                    particleIndex: i,
+                    initialY: -0.017 // Store initial Y position
+                };
+                
+                glow.add(particle);
+            }
         }
         
         // Position the entire glow group
@@ -1674,6 +1914,46 @@ class Game {
         // No floating - keep static
     }
 
+    ensurePathToExit(exitX, exitZ) {
+        // Only ensure the exit position itself is clear
+        // Don't create extra empty spaces around it
+        
+        // Just make sure the exit position is accessible
+        this.grid[exitZ][exitX] = 0;
+        
+        // Create a minimal path towards center - only clear necessary cells
+        const centerX = Math.floor(this.mazeSize / 2);
+        const centerZ = Math.floor(this.mazeSize / 2);
+        
+        let currentX = exitX;
+        let currentZ = exitZ;
+        
+        // Clear only one path towards center (not all directions)
+        while (Math.abs(currentX - centerX) > 2 || Math.abs(currentZ - centerZ) > 2) {
+            // Prefer moving towards center in one direction
+            if (Math.abs(currentX - centerX) > Math.abs(currentZ - centerZ)) {
+                // Move horizontally
+                if (currentX < centerX) {
+                    currentX++;
+                } else {
+                    currentX--;
+                }
+            } else {
+                // Move vertically
+                if (currentZ < centerZ) {
+                    currentZ++;
+                } else {
+                    currentZ--;
+                }
+            }
+            
+            // Only clear if within bounds
+            if (currentX >= 0 && currentX < this.mazeSize && currentZ >= 0 && currentZ < this.mazeSize) {
+                this.grid[currentZ][currentX] = 0;
+            }
+        }
+    }
+
     buildMaze() {
         // Force remove old glow effects to prevent duplication
         if (this.goal && this.goal.parent) {
@@ -1729,7 +2009,7 @@ class Game {
         const floor = new THREE.Mesh(floorGeometry, floorMaterial);
         floor.rotation.x = -Math.PI / 2;
         floor.position.set(this.mazeSize / 2 - 0.5, -0.5, this.mazeSize / 2 - 0.5);
-        floor.receiveShadow = true;
+        floor.receiveShadow = true; // ENABLED - Clean shadows
         this.scene.add(floor);
 
         // Random exit position - either on right side or bottom side
@@ -1749,6 +2029,9 @@ class Game {
         // Update maze grid for new exit position
         // Clear the new exit position (make it a passage)
         this.grid[exitZ][exitX] = 0;
+        
+        // ENSURE DIRECT PATH TO EXIT - Prevent diagonal blocking
+        this.ensurePathToExit(exitX, exitZ);
         
         // Close the old default exit position (mazeSize-1, mazeSize-2) if it's different
         const oldExitX = this.mazeSize - 1;
@@ -1787,15 +2070,15 @@ class Game {
 
         const wallGeo = new THREE.BoxGeometry(1, 1, 1);
         this.wallInstancedMesh = new THREE.InstancedMesh(wallGeo, wallMaterial, wallCount);
-        this.wallInstancedMesh.castShadow = true;
-        this.wallInstancedMesh.receiveShadow = true;
+        this.wallInstancedMesh.castShadow = true; // ENABLED - Clean shadows
+        this.wallInstancedMesh.receiveShadow = true; // ENABLED - Clean shadows
         this.wallInstancedMesh.frustumCulled = true;
         this.scene.add(this.wallInstancedMesh);
 
         const brickGeo = new THREE.BoxGeometry(0.4, 1, 0.25); // Height will be scaled
         this.brickInstancedMesh = new THREE.InstancedMesh(brickGeo, wallMaterial, decorBrickCount);
-        this.brickInstancedMesh.castShadow = true;
-        this.brickInstancedMesh.receiveShadow = true;
+        this.brickInstancedMesh.castShadow = true; // ENABLED - Clean shadows
+        this.brickInstancedMesh.receiveShadow = true; // ENABLED - Clean shadows
         this.brickInstancedMesh.frustumCulled = true;
         this.scene.add(this.brickInstancedMesh);
 
@@ -1926,12 +2209,12 @@ class Game {
         }
 
         // Create beautiful green exit glow using universal function
-        const greenGlow = this.createGlowEffect(exitX, exitZ, 0x00ff00, 0x00ff00, 1, 3); // Reduced intensity and distance
+        const greenGlow = this.createGlowEffect(exitX, exitZ, 0x00ff00, 0x00ff00, 1, 3, true); // With particles for green glow
         this.goal = greenGlow.glow;
         this.goalLight = greenGlow.glowLight;
 
         // Create beautiful red start glow using universal function
-        const redGlow = this.createGlowEffect(0, 1, 0xff0000, 0xff0000, 0.8, 2.5); // Reduced intensity and distance
+        const redGlow = this.createGlowEffect(0, 1, 0xff0000, 0xff0000, 0.8, 2.5, false); // No particles for red glow
         this.startGlow = redGlow.glow;
         this.startGlowLight = redGlow.glowLight;
 
@@ -2087,13 +2370,18 @@ class Game {
         const positions = [];
         const startX = 0, startZ = 1; // Start position
         
-        // Filter spaces that are at least minDistance from start
+        // Filter spaces that are at least minDistance from start AND within maze bounds
         const farFromStartSpaces = availableSpaces.filter(space => {
             const distance = Math.sqrt(
                 Math.pow(space.x - startX, 2) + 
                 Math.pow(space.y - startZ, 2)
             );
-            return distance >= minDistance;
+            
+            // Ensure position is within maze boundaries (1 unit margin from walls)
+            const withinBounds = space.x >= 1 && space.x < this.mazeSize - 1 && 
+                                space.y >= 1 && space.y < this.mazeSize - 1;
+            
+            return distance >= minDistance && withinBounds;
         });
         
         // Shuffle the far-from-start spaces
@@ -2413,6 +2701,7 @@ createObstacle(x, y, material, type) {
             case 'KeyF':
                 if (this.flashlight) {
                     const willTurnOn = !this.flashlight.visible;
+                    console.log('[Flashlight] Toggle:', willTurnOn ? 'ON' : 'OFF');
                     
                     // Batch light visibility changes for performance
                     this.flashlight.visible = willTurnOn;
@@ -2420,6 +2709,9 @@ createObstacle(x, y, material, type) {
 
                     // Optimize audio operations - use async to prevent blocking
                     if (!this.isMuted) {
+                        console.log('[Flashlight] Audio available:', !!this.flashlightOnSound, !!this.flashlightOffSound);
+                        console.log('[Flashlight] Sound buffer loaded:', !!this.flashlightSoundBuffer);
+                        
                         // Stop any playing sounds first
                         if (willTurnOn && this.flashlightOnSound?.isPlaying) {
                             this.flashlightOnSound.stop();
@@ -2432,14 +2724,18 @@ createObstacle(x, y, material, type) {
                         setTimeout(() => {
                             try {
                                 if (willTurnOn && this.flashlightOnSound) {
+                                    console.log('[Flashlight] Playing ON sound');
                                     this.flashlightOnSound.play();
                                 } else if (!willTurnOn && this.flashlightOffSound) {
+                                    console.log('[Flashlight] Playing OFF sound');
                                     this.flashlightOffSound.play();
                                 }
                             } catch (e) {
-                                console.warn('Flashlight sound failed:', e);
+                                console.warn('[Flashlight] Sound failed:', e);
                             }
                         }, 0);
+                    } else {
+                        console.log('[Flashlight] Game is muted');
                     }
                 }
                 break;
@@ -2602,6 +2898,11 @@ createObstacle(x, y, material, type) {
         if (this.flashlightHalo) {
             this.flashlightHalo.intensity = 0.8;
         }
+
+        // Removed volumetric fog effect - was causing visual artifacts
+
+        // Update red orbs
+        this.updateRedOrbs(delta);
 
         // Smooth monster ambient volume fade (for spawn / stop)
         if (this.monsterSound) {
@@ -3059,16 +3360,26 @@ createObstacle(x, y, material, type) {
         
         // Delayed audio start to prevent crackling and add dramatic effect
         setTimeout(() => {
+            console.log('[Monster] Starting audio - sound exists:', !!this.monsterSound);
+            console.log('[Monster] Audio groups - monster enabled:', this.audioGroups.monster);
+            console.log('[Monster] Game muted:', this.isMuted);
+            
             if (this.monsterSound) {
                 if (this.monsterSound.context.state === 'suspended') {
+                    console.log('[Monster] Resuming audio context');
                     this.monsterSound.context.resume();
                 }
                 if (!this.monsterSound.isPlaying) {
+                    console.log('[Monster] Playing ambient sound');
                     this.playAudioSafely(this.monsterSound, 'monster');
+                } else {
+                    console.log('[Monster] Sound already playing');
                 }
                 // Start from silence with dramatic fade up
                 this.monsterVolume = 0;
                 this.monsterVolumeTarget = this.monsterBaseVolume * 1.2; // Initial boost for dramatic entrance
+            } else {
+                console.warn('[Monster] No sound object available');
             }
         }, 800); // Delay audio by 800ms for smoother spawn
         
@@ -3083,29 +3394,36 @@ createObstacle(x, y, material, type) {
     }
 
     buildMonsterMeshCache() {
-        // Larger monster sphere for better visibility
+        // Создаем красный монстра-шар
         const geometry = new THREE.SphereGeometry(0.8, 32, 32);
-        const material = new THREE.MeshPhongMaterial({ 
-            color: 0xff0000,
-            emissive: 0xff0000,  // Bright red emissive
-            emissiveIntensity: 2.0,  // Much brighter
-            shininess: 100,
-            transparent: false,
-            opacity: 1.0
+        const material = new THREE.MeshStandardMaterial({ 
+            color: 0xff0000, // Ярко-красный цвет
+            emissive: 0xff0000, // Красное свечение
+            emissiveIntensity: 0.8, // Сильное свечение
+            roughness: 0.3,
+            metalness: 0.7
         });
         
         this.monsterMeshCache = new THREE.Group();
-        const sphere = new THREE.Mesh(geometry, material);
-        sphere.castShadow = true;
-        this.monsterMeshCache.add(sphere);
+        const monsterBody = new THREE.Mesh(geometry, material);
+        monsterBody.castShadow = true;
+        monsterBody.receiveShadow = true;
+        this.monsterMeshCache.add(monsterBody);
         
-        // Add an inner glow sphere for extra visibility
-        const glowGeo = new THREE.SphereGeometry(0.6, 16, 16);
+        // Добавляем пульсирующий красный свет
+        const glowLight = new THREE.PointLight(0xff0000, 2, 10);
+        glowLight.position.set(0, 0, 0);
+        glowLight.castShadow = true;
+        this.monsterMeshCache.add(glowLight);
+        
+        // Добавляем эффект ореола с помощью полупрозмерной сферы
+        const glowGeo = new THREE.SphereGeometry(1.2, 16, 16);
         const glowMat = new THREE.MeshBasicMaterial({
-            color: 0xff3333,
+            color: 0xff0000,
             transparent: true,
             opacity: 0.3,
-            blending: THREE.AdditiveBlending
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide
         });
         const glowSphere = new THREE.Mesh(glowGeo, glowMat);
         this.monsterMeshCache.add(glowSphere);
@@ -3574,13 +3892,20 @@ createObstacle(x, y, material, type) {
         // Apply all height effects
         this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1 - nightLowering - this.monsterCrouchHeight;
 
-        // Pulsating effect (slight scale variation) - DISABLED
-        // const pulseScale = 1.0 + Math.sin(Date.now() / 500) * 0.05;
-        // this.monster.scale.set(pulseScale, pulseScale, pulseScale);
+        // Pulsating effect for red monster
+        const pulseScale = 1.0 + Math.sin(Date.now() / 300) * 0.1; // Faster, more noticeable pulse
         
-        // Slight scale adjustment when crouching for visual feedback
+        // Update glow light intensity
+        const glowLight = this.monster.children.find(child => child instanceof THREE.PointLight);
+        if (glowLight) {
+            const pulseIntensity = 2 + Math.sin(Date.now() / 300) * 1; // Pulsate between 1 and 3
+            glowLight.intensity = pulseIntensity;
+        }
+        
+        // Combine pulsating and crouch scale effects
         const crouchScale = 1.0 - (this.monsterCrouchHeight * 0.15); // Slightly smaller when crouched
-        this.monster.scale.set(crouchScale, 1.0, crouchScale);
+        const finalScale = pulseScale * crouchScale;
+        this.monster.scale.set(finalScale, finalScale, finalScale);
 
         // Direct movement towards player with obstacle avoidance
         const dx = this.camera.position.x - this.monster.position.x;
@@ -4113,6 +4438,12 @@ createObstacle(x, y, material, type) {
             
             this.clearMaze();
             this.updateLighting();
+            
+            // Removed volumetric fog recreation - was causing artifacts
+            
+            // Очищаем красные шарики при смене уровня
+            this.clearRedOrbs();
+            
             this.buildMaze();
         } catch (error) {
             console.error('Error in nextLevel():', error);

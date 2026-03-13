@@ -1,8 +1,5 @@
 import { Entity } from './Entity.js';
 import { Transform } from '../components/Transform.js';
-import { Velocity } from '../components/Velocity.js';
-import { Health } from '../components/Health.js';
-import { AI } from '../components/AI.js';
 import { AudioSource } from '../components/AudioSource.js';
 import * as THREE from 'three';
 
@@ -12,320 +9,197 @@ export class Monster extends Entity {
         
         // Core components
         this.addComponent('Transform', new Transform({
-            position: options.position || new THREE.Vector3(5, 0.5, 5),
+            position: options.position || new THREE.Vector3(5, 1, 5),
             rotation: options.rotation || new THREE.Euler(0, 0, 0)
         }));
         
-        this.addComponent('Velocity', new Velocity({
-            maxSpeed: options.maxSpeed || 2.0,
-            friction: options.friction || 0.8
-        }));
-        
-        this.addComponent('Health', new Health(options.maxHealth || 50));
-        
-        this.addComponent('AI', new AI({
-            state: options.initialState || 'idle',
-            patrolSpeed: options.patrolSpeed || 1.0,
-            chaseSpeed: options.chaseSpeed || 2.0,
-            searchSpeed: options.searchSpeed || 1.5,
-            detectionRange: options.detectionRange || 15,
-            attackRange: options.attackRange || 2,
-            attackDamage: options.attackDamage || 10,
-            attackCooldown: options.attackCooldown || 1000,
-            canPatrol: options.canPatrol !== false,
-            canChase: options.canChase !== false,
-            canAttack: options.canAttack !== false,
-            canSearch: options.canSearch !== false
-        }));
-        
+        // 3D Audio component
         this.addComponent('AudioSource', new AudioSource({
-            volume: options.volume || 0.8,
+            volume: 0.3,
             spatial: true,
             is3D: true,
-            distance: 5,
-            rolloff: 1.0
+            distance: 2,
+            rolloff: 1.5,
+            loop: true
         }));
         
-        // Monster-specific properties
-        this.baseSpeed = options.baseSpeed || 2.0;
-        this.currentSpeed = this.baseSpeed;
-        this.difficultyMultiplier = options.difficultyMultiplier || 1.0;
+        // Monster properties
+        this.basePosition = this.getComponent('Transform').position.clone();
+        this.glowIntensity = 1.0;
+        this.pulseSpeed = 2.0;
+        this.pulseTime = 0;
         
-        // Animation properties
-        this.crouchHeight = 0;
-        this.targetCrouchHeight = 0;
-        this.crouchSpeed = 3.0;
-        this.isCrouching = false;
+        // Audio properties
+        this.maxVolume = 1.0;
+        this.minVolume = 0.1;
+        this.maxDistance = 20;
+        this.audioInitialized = false;
         
-        // Sound properties
-        this.ambientSoundInterval = options.ambientSoundInterval || 5000;
-        this.lastAmbientSoundTime = 0;
-        this.footstepSoundInterval = options.footstepSoundInterval || 800;
-        this.lastFootstepSoundTime = 0;
-        
-        // Visual properties
-        this.isVisible = false;
-        this.visibilityCheckInterval = 100; // ms
-        this.lastVisibilityCheck = 0;
-        
-        // Spawn properties
-        this.spawnDelay = options.spawnDelay || 0;
-        this.isSpawned = this.spawnDelay <= 0;
-        this.spawnTime = 0;
-        
-        // Stats
-        this.stats = {
-            playersCaught: 0,
-            distanceTraveled: 0,
-            timeActive: 0,
-            attacksLanded: 0
-        };
-        
-        this.lastPosition = this.getComponent('Transform').position.clone();
+        // Create visual representation
+        this.createVisuals();
     }
-
+    
+    createVisuals() {
+        // Create red sphere
+        this.geometry = new THREE.SphereGeometry(0.8, 32, 32);
+        this.material = new THREE.MeshStandardMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.5,
+            roughness: 0.3,
+            metalness: 0.7
+        });
+        
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
+        this.mesh.position.copy(this.getComponent('Transform').position);
+        this.mesh.castShadow = true;
+        this.mesh.receiveShadow = true;
+        
+        // Add glow effect
+        this.glowLight = new THREE.PointLight(0xff0000, 2, 10);
+        this.glowLight.position.copy(this.getComponent('Transform').position);
+        
+        // Store reference for external access
+        this.visualObject = this.mesh;
+        this.lightObject = this.glowLight;
+    }
+    
     update(deltaTime, currentTime) {
         if (!this.isActive) return;
         
         const transform = this.getComponent('Transform');
-        const ai = this.getComponent('AI');
-        const health = this.getComponent('Health');
-        
-        if (!transform || !ai || !health) return;
-        
-        // Handle spawning
-        if (!this.isSpawned) {
-            this.spawnTime += deltaTime;
-            if (this.spawnTime >= this.spawnDelay) {
-                this.spawn();
-            }
-            return;
-        }
-        
-        // Update AI
-        this.updateAI(deltaTime, currentTime);
-        
-        // Update animations
-        this.updateAnimations(deltaTime);
-        
-        // Update sounds
-        this.updateSounds(currentTime);
-        
-        // Update visibility
-        this.updateVisibility(currentTime);
-        
-        // Update stats
-        this.updateStats(deltaTime);
-        
-        // Update speed based on difficulty
-        this.updateSpeed();
-    }
-
-    spawn() {
-        this.isSpawned = true;
-        this.isActive = true;
-        this.getComponent('Transform').position.y = 0.5; // Set proper height
-    }
-
-    updateAI(deltaTime, currentTime) {
-        const ai = this.getComponent('AI');
-        if (!ai) return;
-        
-        // Update search timer
-        if (ai.state === 'search') {
-            if (ai.updateSearchTimer(deltaTime)) {
-                ai.setState('patrol');
-            }
-        }
-    }
-
-    updateAnimations(deltaTime) {
-        const transform = this.getComponent('Transform');
         if (!transform) return;
         
-        // Update crouch animation
-        const heightDiff = this.targetCrouchHeight - this.crouchHeight;
-        this.crouchHeight += heightDiff * this.crouchSpeed * deltaTime;
+        // Update pulsing glow effect
+        this.pulseTime += deltaTime * this.pulseSpeed;
+        const pulseFactor = (Math.sin(this.pulseTime) + 1) * 0.5;
+        this.glowIntensity = 0.5 + pulseFactor * 0.5;
         
-        // Apply crouch height to transform
-        const baseHeight = 0.5;
-        transform.position.y = baseHeight - this.crouchHeight;
+        // Update visuals
+        this.updateVisuals();
+        
+        // Update audio based on player distance
+        this.updateAudioBasedOnDistance();
     }
-
-    updateSounds(currentTime) {
-        // Play ambient sounds periodically
-        if (currentTime - this.lastAmbientSoundTime > this.ambientSoundInterval) {
-            this.playAmbientSound();
-            this.lastAmbientSoundTime = currentTime;
-        }
-        
-        // Play footstep sounds when moving
-        const velocity = this.getComponent('Velocity');
-        if (velocity && velocity.getSpeed() > 0.1) {
-            if (currentTime - this.lastFootstepSoundTime > this.footstepSoundInterval) {
-                this.playFootstepSound();
-                this.lastFootstepSoundTime = currentTime;
-            }
-        }
-    }
-
-    updateVisibility(currentTime) {
-        if (currentTime - this.lastVisibilityCheck < this.visibilityCheckInterval) {
-            return;
-        }
-        
-        this.lastVisibilityCheck = currentTime;
-        
-        // Check if monster should be visible (simplified - in full implementation would check line of sight)
-        const ai = this.getComponent('AI');
-        if (ai && ai.target) {
-            const distance = this.getComponent('Transform').position.distanceTo(ai.target);
-            this.isVisible = distance < 20; // Visible within 20 units
-        }
-    }
-
-    updateStats(deltaTime) {
+    
+    updateVisuals() {
         const transform = this.getComponent('Transform');
-        if (!transform) return;
         
-        // Update distance traveled
-        const distance = transform.position.distanceTo(this.lastPosition);
-        this.stats.distanceTraveled += distance;
-        this.lastPosition = transform.position.clone();
-        
-        // Update time active
-        if (this.isSpawned && this.isActive) {
-            this.stats.timeActive += deltaTime;
-        }
-    }
-
-    updateSpeed() {
-        const ai = this.getComponent('AI');
-        const velocity = this.getComponent('Velocity');
-        
-        if (!ai || !velocity) return;
-        
-        let speed = this.baseSpeed;
-        
-        switch (ai.state) {
-            case 'patrol':
-                speed = ai.patrolSpeed;
-                break;
-            case 'chase':
-                speed = ai.chaseSpeed;
-                break;
-            case 'search':
-                speed = ai.searchSpeed;
-                break;
-            default:
-                speed = this.baseSpeed;
+        // Update mesh position
+        if (this.mesh) {
+            this.mesh.position.copy(transform.position);
+            this.material.emissiveIntensity = this.glowIntensity;
         }
         
-        // Apply difficulty multiplier
-        speed *= this.difficultyMultiplier;
-        
-        velocity.maxSpeed = speed;
-        this.currentSpeed = speed;
+        // Update glow light
+        if (this.glowLight) {
+            this.glowLight.position.copy(transform.position);
+            this.glowLight.intensity = 2 * this.glowIntensity;
+        }
     }
-
-    setCrouching(crouching) {
-        this.isCrouching = crouching;
-        this.targetCrouchHeight = crouching ? 0.3 : 0;
-    }
-
-    attack(target) {
-        const ai = this.getComponent('AI');
-        if (!ai || !ai.canAttackNow(Date.now())) return false;
-        
-        ai.performAttack(Date.now());
-        this.stats.attacksLanded++;
-        
-        // Apply damage to target (would be handled by event system)
-        return true;
-    }
-
-    onPlayerCaught() {
-        this.stats.playersCaught++;
-        this.playAttackSound();
-    }
-
-    playAmbientSound() {
+    
+    updateAudioBasedOnDistance() {
         const audio = this.getComponent('AudioSource');
-        if (audio && this.isSpawned) {
-            // Emit event to play ambient sound
-            this.emit('play_monster_ambient', { position: this.getComponent('Transform').position });
+        if (!audio) return;
+        
+        // Get player position (assuming global player reference)
+        const playerPosition = this.getPlayerPosition();
+        if (!playerPosition) return;
+        
+        const monsterPosition = this.getComponent('Transform').position;
+        const distance = monsterPosition.distanceTo(playerPosition);
+        
+        // Calculate volume based on distance
+        const volumeFactor = Math.max(0, 1 - (distance / this.maxDistance));
+        const targetVolume = this.minVolume + (this.maxVolume - this.minVolume) * volumeFactor;
+        
+        // Apply volume to audio component
+        audio.setVolume(targetVolume);
+        
+        // Update audio position
+        audio.setPosition(monsterPosition);
+        
+        // Start ambient sound if not already playing and player is close enough
+        if (!this.audioInitialized && distance < this.maxDistance) {
+            this.startAmbientSound();
+            this.audioInitialized = true;
+        } else if (this.audioInitialized && distance > this.maxDistance * 1.5) {
+            this.stopAmbientSound();
+            this.audioInitialized = false;
         }
     }
-
-    playFootstepSound() {
+    
+    getPlayerPosition() {
+        // This should be connected to the actual player entity
+        // For now, return a placeholder or try to get from global game state
+        if (window.gameState && window.gameState.player) {
+            return window.gameState.player.getComponent('Transform').position;
+        }
+        return null;
+    }
+    
+    startAmbientSound() {
         const audio = this.getComponent('AudioSource');
-        if (audio && this.isSpawned) {
-            // Emit event to play footstep sound
-            this.emit('play_monster_footstep', { position: this.getComponent('Transform').position });
+        if (audio && !audio.isPlayingSound()) {
+            // Emit event to play monster ambient sound
+            this.emit('play_monster_ambient', { 
+                position: this.getComponent('Transform').position,
+                loop: true,
+                volume: audio.volume
+            });
         }
     }
-
-    playAttackSound() {
+    
+    stopAmbientSound() {
         const audio = this.getComponent('AudioSource');
-        if (audio && this.isSpawned) {
-            // Emit event to play attack sound
-            this.emit('play_monster_attack', { position: this.getComponent('Transform').position });
+        if (audio) {
+            // Emit event to stop monster ambient sound
+            this.emit('stop_monster_ambient', { 
+                position: this.getComponent('Transform').position
+            });
         }
     }
-
-    setDifficulty(multiplier) {
-        this.difficultyMultiplier = multiplier;
-        this.updateSpeed();
-    }
-
-    setPatrolRoute(points) {
-        const ai = this.getComponent('AI');
-        if (ai) {
-            ai.setPatrolPoints(points);
-        }
-    }
-
-    reset() {
-        const health = this.getComponent('Health');
+    
+    setPosition(position) {
         const transform = this.getComponent('Transform');
-        const velocity = this.getComponent('Velocity');
-        const ai = this.getComponent('AI');
-        
-        if (health) health.reset();
         if (transform) {
-            transform.position.set(5, 0.5, 5);
-            transform.rotation.set(0, 0, 0);
+            transform.position.copy(position);
+            this.basePosition = position.clone();
         }
-        if (velocity) velocity.setLinear(0, 0, 0);
-        if (ai) {
-            ai.setState('idle');
-            ai.setTarget(null);
-            ai.resetSearch();
+    }
+    
+    getVisualObject() {
+        return this.mesh;
+    }
+    
+    getLightObject() {
+        return this.glowLight;
+    }
+    
+    reset() {
+        const transform = this.getComponent('Transform');
+        const audio = this.getComponent('AudioSource');
+        
+        if (transform) {
+            transform.position.copy(this.basePosition);
         }
         
-        this.isSpawned = this.spawnDelay <= 0;
-        this.spawnTime = 0;
-        this.crouchHeight = 0;
-        this.targetCrouchHeight = 0;
-        this.isCrouching = false;
-        this.isVisible = false;
+        if (audio) {
+            audio.stop();
+            this.audioInitialized = false;
+        }
+        
+        this.pulseTime = 0;
+        this.glowIntensity = 1.0;
         this.isActive = true;
     }
-
-    getStats() {
-        return { ...this.stats };
-    }
-
-    clone() {
-        const monster = new Monster();
-        monster.stats = { ...this.stats };
-        monster.difficultyMultiplier = this.difficultyMultiplier;
-        return monster;
-    }
-
+    
     emit(eventName, data) {
-        // This would connect to the event bus
-        // For now, console.log as placeholder
-        console.log(`Monster event: ${eventName}`, data);
+        // Connect to event bus
+        if (window.gameEventBus) {
+            window.gameEventBus.emit(eventName, data);
+        } else {
+            console.log(`Monster event: ${eventName}`, data);
+        }
     }
 }

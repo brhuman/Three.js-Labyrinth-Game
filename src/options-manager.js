@@ -42,6 +42,10 @@ export class OptionsManager {
         if (saved) {
             try {
                 const parsed = JSON.parse(saved);
+                // Replace 'native' with 'high' since native option was removed
+                if (parsed.renderScale === 'native') {
+                    parsed.renderScale = 'high';
+                }
                 return { ...this.defaults, ...parsed };
             } catch (e) {
                 console.warn('Failed to parse saved options, using defaults');
@@ -318,8 +322,7 @@ export class OptionsManager {
         const descriptions = {
             'performance': 'Render scale: 50% for maximum performance',
             'balanced': 'Render scale: 75% for good performance',
-            'high': 'Render scale: 100% standard quality',
-            'native': 'Render scale: 100% native device resolution'
+            'high': 'Render scale: 100% standard quality'
         };
         
         descElement.textContent = descriptions[this.settings.renderScale] || descriptions.balanced;
