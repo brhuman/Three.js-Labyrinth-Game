@@ -3292,7 +3292,7 @@ createObstacle(x, y, material, type) {
         this.monster.position.set(0, 0.8, 1);
         this.monster.visible = true;
 
-        // Randomly pick a ghost texture and set a matching light color
+        // Randomly pick a ghost texture AND independently pick a glow color
         if (this.monsterTextures && this.monsterTextures.length > 0) {
             const randomIndex = Math.floor(Math.random() * this.monsterTextures.length);
             const randomTex = this.monsterTextures[randomIndex];
@@ -3302,14 +3302,42 @@ createObstacle(x, y, material, type) {
                 mesh.material.map = randomTex;
                 mesh.material.needsUpdate = true;
             }
-            
-            // Adjust light color depending on the loaded texture index
+
+            // Monster names — one per texture slot
+            const monsterNames = ['The Hollow', 'Crimson Eye', 'Skull Wraith', 'The Shade'];
+            const currentMonsterName = monsterNames[randomIndex] || 'The Unknown';
+
+            // Four glow colors — picked independently from the texture
+            const glowColors = [0xff2222, 0xaa00ff, 0xffcc00, 0x0088ff];
+            const glowCssColors = ['#ff2222', '#aa00ff', '#ffcc00', '#0088ff'];
+            const glowIndex = Math.floor(Math.random() * glowColors.length);
+
             const light = this.monster.children.find(child => child.isPointLight);
             if (light) {
-                // If it's a red texture vs blue/green texture 
-                // Using 0xff0000 (red) for face_2/ghost_2 and 0x00aaff (blue) for face_1/ghost_1
-                const isRed = randomIndex % 2 !== 0; 
-                light.color.setHex(isRed ? 0xff0000 : 0x00aaff);
+                light.color.setHex(glowColors[glowIndex]);
+            }
+
+            // Update monster name badge in the HUD
+            const monsterTexturePaths = [
+                '/textures/monster_face_1.png',
+                '/textures/monster_face_2.png',
+                '/textures/ghost_skull_1.png',
+                '/textures/ghost_skull_2.png'
+            ];
+            const namePanel = document.getElementById('monster-name-panel');
+            const nameDisplay = document.getElementById('monster-name-display');
+            const faceThumb = document.getElementById('monster-face-thumb');
+            if (namePanel && nameDisplay) {
+                nameDisplay.textContent = currentMonsterName;
+                nameDisplay.style.color = glowCssColors[glowIndex];
+                nameDisplay.style.textShadow = `0 0 10px ${glowCssColors[glowIndex]}`;
+                if (faceThumb) {
+                    faceThumb.src = monsterTexturePaths[randomIndex] || '';
+                    faceThumb.style.color = glowCssColors[glowIndex]; // drives currentColor
+                    faceThumb.style.borderColor = glowCssColors[glowIndex];
+                    faceThumb.style.boxShadow = `0 0 8px ${glowCssColors[glowIndex]}`;
+                }
+                namePanel.style.display = 'flex';
             }
         }
         
@@ -3975,6 +4003,10 @@ createObstacle(x, y, material, type) {
         document.getElementById('monster-timer').textContent = "5.0s";
         document.getElementById('timer').textContent = "00:00";
         document.getElementById('bonus-indicator').style.display = 'none';
+
+        // Hide monster name badge on restart
+        const namePanel = document.getElementById('monster-name-panel');
+        if (namePanel) namePanel.style.display = 'none';
         
         // Hide the monster mesh but DON'T stop its sound — keeps playing on death screen
         if (this.monsterSpawned) {
@@ -4108,6 +4140,10 @@ createObstacle(x, y, material, type) {
                 this.monster.visible = false;
                 this.monsterSpawned = false;
             }
+
+            // Hide monster name badge for the new level
+            const namePanel = document.getElementById('monster-name-panel');
+            if (namePanel) namePanel.style.display = 'none';
             
             // Reset spawn conditions for new level
             this.playerLeftStartArea = false;
