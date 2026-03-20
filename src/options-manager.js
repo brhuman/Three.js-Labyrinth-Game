@@ -21,7 +21,8 @@ export class OptionsManager {
                 all: true,
                 monster: true,
                 facula: true
-            }
+            },
+            selectedMonster: -1
         };
         
         // Current settings (will be loaded from localStorage)
@@ -237,6 +238,16 @@ export class OptionsManager {
             });
         });
         
+        // Monster selection buttons
+        document.querySelectorAll('.monster-sel-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.settings.selectedMonster = parseInt(btn.dataset.monster);
+                this.updateMonsterButtons();
+                this.saveSettings();
+                this.applyMonsterSelection();
+            });
+        });
+        
         // Reset settings button
         const resetBtn = document.getElementById('reset-settings-btn');
         if (resetBtn) {
@@ -265,6 +276,7 @@ export class OptionsManager {
         this.updateAudioButtons();
         this.updateTechnicalButtons();
         this.updateLanguageButtons();
+        this.updateMonsterButtons();
     }
     
     updateLevelDisplay() {
@@ -417,6 +429,16 @@ export class OptionsManager {
         });
     }
     
+    updateMonsterButtons() {
+        document.querySelectorAll('.monster-sel-btn').forEach(btn => {
+            if (parseInt(btn.dataset.monster) === this.settings.selectedMonster) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+    
     applySettings() {
         this.applyDifficulty();
         this.applyResolution();
@@ -426,6 +448,7 @@ export class OptionsManager {
         this.applyAudioSettings();
         this.applyTechnicalSettings();
         this.applyLanguage();
+        this.applyMonsterSelection();
     }
     
     applyDifficulty() {
@@ -493,6 +516,12 @@ export class OptionsManager {
         }
     }
     
+    applyMonsterSelection() {
+        if (this.game) {
+            this.game.selectedMonsterIndex = this.settings.selectedMonster;
+        }
+    }
+    
     // Public methods for game to get current settings
     getStartingLevel() {
         return this.settings.startingLevel;
@@ -534,6 +563,10 @@ export class OptionsManager {
         return { ...this.settings.audioGroups };
     }
     
+    getSelectedMonster() {
+        return this.settings.selectedMonster;
+    }
+    
     // Reset all settings to defaults
     resetSettings() {
         this.settings = { ...this.defaults };
@@ -553,6 +586,7 @@ export class OptionsManager {
             this.game.fogOfWar = this.settings.fogOfWar;
             this.game.currentLanguage = this.settings.language;
             this.game.audioGroups = this.settings.audioGroups;
+            this.game.selectedMonsterIndex = this.settings.selectedMonster;
         }
         
         console.log('Settings reset to defaults');

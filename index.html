@@ -167,6 +167,18 @@
               </div>
             </div>
 
+            <!-- Monster Selection Settings -->
+            <div class="settings-section" style="margin-bottom: 25px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+              <h3 style="color: var(--accent-color); font-size: 1.2rem; margin-bottom: 15px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; text-align: center;">Monster Selection</h3>
+              <div class="monster-selection-buttons" style="display: flex; flex-direction: column; gap: 8px;">
+                <button class="monster-sel-btn active" data-monster="-1">All Random</button>
+                <button class="monster-sel-btn" data-monster="0">The Hollow <span style="font-size: 0.7rem; opacity: 0.7;">(+10% Speed)</span></button>
+                <button class="monster-sel-btn" data-monster="1">Crimson Eye <span style="font-size: 0.7rem; opacity: 0.7;">(-12% Player Speed)</span></button>
+                <button class="monster-sel-btn" data-monster="2">Skull Wraith <span style="font-size: 0.7rem; opacity: 0.7;">(+15% Speed)</span></button>
+                <button class="monster-sel-btn" data-monster="3">The Shade <span style="font-size: 0.7rem; opacity: 0.7;">(-40% Light Intensity)</span></button>
+              </div>
+            </div>
+
             <!-- Starting Level Settings -->
             <div class="settings-section" style="margin-bottom: 25px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
               <h3 data-i18n="starting_level" style="color: var(--accent-color); font-size: 1.2rem; margin-bottom: 15px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; text-align: center;">Starting Level</h3>
@@ -186,6 +198,24 @@
         <!-- Help Menu Page -->
         <div id="menu-help" class="menu-page" style="display: none;">
           <h2 data-i18n="help" style="color: #fff; margin-bottom: 20px;">HELP</h2>
+
+          <div class="lore-box">
+            <h3 style="color: #ff3333; margin-bottom: 10px; font-family: 'Courier New', Courier, monospace; letter-spacing: 1px;">BESTIARY</h3>
+            <div style="font-size: 0.85rem; line-height: 1.5; color: #eee;">
+              <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
+                <strong style="color: #ff3333;">The Hollow</strong>: A swift phantom that moves <span style="color: #ff4444; font-weight: bold;">10% faster</span> than normal.
+              </div>
+              <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
+                <strong style="color: #ff3333;">Crimson Eye</strong>: Its gaze weakens your resolve, reducing player speed by <span style="color: #ff4444; font-weight: bold;">12%</span>.
+              </div>
+              <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
+                <strong style="color: #ff3333;">Skull Wraith</strong>: A swift phantom. Moves <span style="color: #ff4444; font-weight: bold;">15% faster</span> than normal.
+              </div>
+              <div style="margin-bottom: 5px;">
+                <strong style="color: #ff3333;">The Shade</strong>: Consumes light, making flashlight and moonlight <span style="color: #ff4444; font-weight: bold;">40% dimmer</span>.
+              </div>
+            </div>
+          </div>
 
           <div class="lore-box">
             <h3 data-i18n="game_description_title">Game Description</h3>
@@ -274,7 +304,7 @@
             <div class="stats"><span data-i18n="level">Level</span>: <span id="level">1</span></div>
           </div>
 
-          <div id="monster-name-panel" class="glass-panel" style="display: none; gap: 8px; align-items: center; flex-direction: row; padding: 6px 10px;">
+          <div id="monster-name-panel" class="glass-panel" style="display: none; gap: 8px; align-items: center; flex-direction: row; padding: 6px 10px; position: relative;">
             <img id="monster-face-thumb" src="" alt="" style="
               width: 34px; height: 34px;
               border-radius: 50%;
@@ -286,7 +316,10 @@
               image-rendering: auto;
               background: rgba(0,0,0,0.4);
             "/>
-            <div class="stats" id="monster-name-display" style="color: #ff4444; text-shadow: 0 0 8px currentColor; letter-spacing: 1px; white-space: nowrap;"></div>
+            <div style="display: flex; flex-direction: column;">
+              <div class="stats" id="monster-name-display" style="color: #ff4444; text-shadow: 0 0 8px currentColor; letter-spacing: 1px; white-space: nowrap; font-size: 0.9rem;"></div>
+              <div id="monster-ability-display" style="font-size: 0.65rem; font-style: italic; opacity: 0.8; margin-top: -2px; letter-spacing: 0.5px;"></div>
+            </div>
           </div>
 
           <div class="glass-panel">

@@ -6,6 +6,33 @@ import { findPathAStar, getAccessibleArea } from './utils.js';
 import { translations } from './translations.js';
 import { MonsterController } from './core/ai/MonsterController.js';
 
+const MONSTER_DATA = [
+    {
+        name: 'The Hollow',
+        texture: '/textures/monster_face_1.png',
+        ability: '+10% Speed',
+        description: 'Moves 10% faster'
+    },
+    {
+        name: 'Crimson Eye',
+        texture: '/textures/monster_face_2.png',
+        ability: '-12% Player Speed',
+        description: 'Reduces player movement speed'
+    },
+    {
+        name: 'Skull Wraith',
+        texture: '/textures/ghost_skull_1.png',
+        ability: '+15% Speed',
+        description: 'Moves 15% faster than normal'
+    },
+    {
+        name: 'The Shade',
+        texture: '/textures/ghost_skull_2.png',
+        ability: '-40% Light Intensity',
+        description: 'Dims flashlight and moonlight'
+    }
+];
+
 class Game {
     constructor() {
         this.scene = new THREE.Scene();
@@ -138,6 +165,11 @@ class Game {
         this.isMuted = localStorage.getItem('isMuted') === 'true';
         this.listener.setMasterVolume(this.isMuted ? 0 : 1);
         
+        // Monster Ability Multipliers
+        this.monsterSpeedMultiplier = 1.0;
+        this.playerSpeedMultiplier = 1.0;
+        this.lightIntensityMultiplier = 1.0;
+        
         // Web Audio API для простых звуков
         this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -173,6 +205,7 @@ class Game {
         this.fogOfWar = this.optionsManager.getFogOfWar();
         this.currentLanguage = this.optionsManager.getLanguage();
         this.audioGroups = this.optionsManager.getAudioGroups();
+        this.selectedMonsterIndex = this.optionsManager.getSelectedMonster();
 
         // Loading Progress
         this.loadingManager = new THREE.LoadingManager();
@@ -1355,13 +1388,13 @@ class Game {
         this.renderer.setClearColor(fogColor);
 
         // 2. Уменьшаем ambient light с уровнем (темнее становится)
-        const ambientIntensity = Math.max(0.32 - (this.level * 0.05), 0.12);
+        const ambientIntensity = Math.max(0.32 - (this.level * 0.05), 0.12) * this.lightIntensityMultiplier;
         const ambientLight = new THREE.AmbientLight(0x404040, ambientIntensity);
         ambientLight.isAmbientLight = true;
         this.scene.add(ambientLight);
 
         // 3. Hemisphere light тоже уменьшается с уровнем
-        const hemiIntensity = Math.max(0.24 - (this.level * 0.03), 0.08);
+        const hemiIntensity = Math.max(0.24 - (this.level * 0.03), 0.08) * this.lightIntensityMultiplier;
         const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x2F4F2F, hemiIntensity);
         this.scene.add(hemiLight);
 
@@ -1381,7 +1414,7 @@ class Game {
         }
         
         // Создаем мягкий свет для эффекта свечения Луны
-        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.24, 100);
+        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.24 * this.lightIntensityMultiplier, 100);
         this.moonGlow.position.set(moonPos.x, moonPos.y, moonPos.z);
         this.moonGlow.decay = 0.5; // Медленное затухание для эффекта ореола
         this.scene.add(this.moonGlow);
@@ -1396,7 +1429,7 @@ class Game {
             this.scene.remove(this.moonAmbientGlow);
         }
         
-        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.04);
+        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.04 * this.lightIntensityMultiplier);
         this.scene.add(this.moonAmbientGlow);
 
         // Обновляем настройки теней для Луны
@@ -2878,10 +2911,10 @@ createObstacle(x, y, material, type) {
 
         // Simplified steady flashlight
         if (this.flashlight) {
-            this.flashlight.intensity = 2.5; 
+            this.flashlight.intensity = 2.5 * this.lightIntensityMultiplier; 
         }
         if (this.flashlightHalo) {
-            this.flashlightHalo.intensity = 0.8;
+            this.flashlightHalo.intensity = 0.8 * this.lightIntensityMultiplier;
         }
 
         // Removed volumetric fog effect - was causing visual artifacts
@@ -3283,91 +3316,84 @@ createObstacle(x, y, material, type) {
         }
 
         console.log('=== MONSTER SPAWN START ===');
-        console.log('Monster object:', this.monster);
-        console.log('Monster position before:', this.monster.position);
-        console.log('Monster visible before:', this.monster.visible);
-        console.log('Monster children count:', this.monster.children.length);
 
         // Spawn monster at player start position
         this.monster.position.set(0, 0.8, 1);
         this.monster.visible = true;
 
-        // Randomly pick a ghost texture AND independently pick a glow color
-        if (this.monsterTextures && this.monsterTextures.length > 0) {
-            const randomIndex = Math.floor(Math.random() * this.monsterTextures.length);
-            const randomTex = this.monsterTextures[randomIndex];
+        // --- Monster Selection & Abilities ---
+        this.resetMonsterAbilities();
+
+        let monsterIndex = this.selectedMonsterIndex;
+        if (monsterIndex === -1) {
+            monsterIndex = Math.floor(Math.random() * MONSTER_DATA.length);
+        }
+        
+        const data = MONSTER_DATA[monsterIndex];
+        const randomTex = this.monsterTextures[monsterIndex];
+        
+        // Apply textures
+        const mesh = this.monster.children.find(child => child.isMesh);
+        if (mesh && randomTex) {
+            mesh.material.map = randomTex;
+            mesh.material.needsUpdate = true;
+        }
+
+        // Apply Ability Effects
+        if (monsterIndex === 0) { // The Hollow: +10% Speed
+            this.monsterSpeedMultiplier = 1.1;
+            this.monsterSpeed *= this.monsterSpeedMultiplier;
+        } else if (monsterIndex === 1) { // Crimson Eye: -12% Player Speed
+            this.playerSpeedMultiplier = 0.88;
+            this.playerSpeed = this.basePlayerSpeed * this.playerSpeedMultiplier;
+        } else if (monsterIndex === 2) { // Skull Wraith: +15% Speed
+            this.monsterSpeedMultiplier = 1.15;
+            this.monsterSpeed *= this.monsterSpeedMultiplier;
+        } else if (monsterIndex === 3) { // The Shade: -40% Light Intensity
+            this.lightIntensityMultiplier = 0.6;
+            this.updateLighting(); // Re-apply lighting with the new multiplier
+        }
+
+        // Independently pick a glow color for visual variety
+        const glowColors = [0xff2222, 0xaa00ff, 0xffcc00, 0x0088ff];
+        const glowCssColors = ['#ff2222', '#aa00ff', '#ffcc00', '#0088ff'];
+        const glowIndex = Math.floor(Math.random() * glowColors.length);
+
+        const light = this.monster.children.find(child => child.isPointLight);
+        if (light) {
+            light.color.setHex(glowColors[glowIndex]);
+        }
+
+        // Update monster name badge in the HUD
+        const namePanel = document.getElementById('monster-name-panel');
+        const nameDisplay = document.getElementById('monster-name-display');
+        const abilityDisplay = document.getElementById('monster-ability-display');
+        const faceThumb = document.getElementById('monster-face-thumb');
+
+        if (namePanel && nameDisplay) {
+            nameDisplay.textContent = data.name;
+            nameDisplay.style.color = glowCssColors[glowIndex];
+            nameDisplay.style.textShadow = `0 0 10px ${glowCssColors[glowIndex]}`;
             
-            const mesh = this.monster.children.find(child => child.isMesh);
-            if (mesh) {
-                mesh.material.map = randomTex;
-                mesh.material.needsUpdate = true;
+            if (abilityDisplay) {
+                abilityDisplay.textContent = data.ability;
+                abilityDisplay.style.color = glowCssColors[glowIndex];
             }
-
-            // Monster names — one per texture slot
-            const monsterNames = ['The Hollow', 'Crimson Eye', 'Skull Wraith', 'The Shade'];
-            const currentMonsterName = monsterNames[randomIndex] || 'The Unknown';
-
-            // Four glow colors — picked independently from the texture
-            const glowColors = [0xff2222, 0xaa00ff, 0xffcc00, 0x0088ff];
-            const glowCssColors = ['#ff2222', '#aa00ff', '#ffcc00', '#0088ff'];
-            const glowIndex = Math.floor(Math.random() * glowColors.length);
-
-            const light = this.monster.children.find(child => child.isPointLight);
-            if (light) {
-                light.color.setHex(glowColors[glowIndex]);
+            
+            if (faceThumb) {
+                faceThumb.src = data.texture;
+                faceThumb.style.borderColor = glowCssColors[glowIndex];
+                faceThumb.style.boxShadow = `0 0 8px ${glowCssColors[glowIndex]}`;
             }
-
-            // Update monster name badge in the HUD
-            const monsterTexturePaths = [
-                '/textures/monster_face_1.png',
-                '/textures/monster_face_2.png',
-                '/textures/ghost_skull_1.png',
-                '/textures/ghost_skull_2.png'
-            ];
-            const namePanel = document.getElementById('monster-name-panel');
-            const nameDisplay = document.getElementById('monster-name-display');
-            const faceThumb = document.getElementById('monster-face-thumb');
-            if (namePanel && nameDisplay) {
-                nameDisplay.textContent = currentMonsterName;
-                nameDisplay.style.color = glowCssColors[glowIndex];
-                nameDisplay.style.textShadow = `0 0 10px ${glowCssColors[glowIndex]}`;
-                if (faceThumb) {
-                    faceThumb.src = monsterTexturePaths[randomIndex] || '';
-                    faceThumb.style.color = glowCssColors[glowIndex]; // drives currentColor
-                    faceThumb.style.borderColor = glowCssColors[glowIndex];
-                    faceThumb.style.boxShadow = `0 0 8px ${glowCssColors[glowIndex]}`;
-                }
-                namePanel.style.display = 'flex';
-            }
+            namePanel.style.display = 'flex';
         }
         
         // Force all children to be visible
         this.monster.traverse((child) => {
             child.visible = true;
-            if (child.material) {
-                console.log('Child material:', child.material.type, 'visible:', child.visible);
-            }
         });
         
-        console.log('✓ Monster spawned!');
-        console.log('  - Position:', this.monster.position.x, this.monster.position.y, this.monster.position.z);
-        console.log('  - Visible:', this.monster.visible);
-        console.log('  - World position:', this.monster.getWorldPosition(new THREE.Vector3()));
-        
-        console.log('✓ Monster spawned and made visible');
-        console.log('  - Position:', this.monster.position);
-        console.log('  - Visible:', this.monster.visible);
-        console.log('  - Children:', this.monster.children.length);
-        
-        // Log each child's material
-        this.monster.traverse((child) => {
-            if (child.isMesh) {
-                console.log(`  - Child mesh: ${child.name || 'unnamed'}`);
-                console.log(`    - Material: ${child.material}`);
-                console.log(`    - Material map: ${child.material.map}`);
-                console.log(`    - Visible: ${child.visible}`);
-            }
-        });
+        console.log(`✓ Monster spawned: ${data.name}`);
         
         // Reset pathfinding state when spawning
         this.monsterPath = [];
@@ -3379,56 +3405,45 @@ createObstacle(x, y, material, type) {
         this.monsterCrouchHeight = 0;
         this.monsterTargetCrouchHeight = 0;
         
-        // Pre-calculate initial path to avoid first-frame lag
-        const currentCellX = Math.floor(this.monster.position.x + 0.5);
-        const currentCellZ = Math.floor(this.monster.position.z + 0.5);
-        const playerCellX = Math.floor(this.camera.position.x + 0.5);
-        const playerCellZ = Math.floor(this.camera.position.z + 0.5);
+        // Pre-calculate initial path
+        this.monsterController.recalculateAStarPath();
         
-        const initialPath = findPathAStar(
-            this.grid, this.mazeSize, this.mazeSize,
-            currentCellX, currentCellZ,
-            playerCellX, playerCellZ,
-            true // isMonster
-        );
-        
-        if (initialPath.length > 0) {
-            this.monsterController.recalculateAStarPath();
-        }
-        
-        // Delayed audio start to prevent crackling and add dramatic effect
+        // Delayed audio start
         setTimeout(() => {
-            console.log('[Monster] Starting audio - sound exists:', !!this.monsterSound);
-            console.log('[Monster] Audio groups - monster enabled:', this.audioGroups.monster);
-            console.log('[Monster] Game muted:', this.isMuted);
-            
             if (this.monsterSound) {
                 if (this.monsterSound.context.state === 'suspended') {
-                    console.log('[Monster] Resuming audio context');
                     this.monsterSound.context.resume();
                 }
                 if (!this.monsterSound.isPlaying) {
-                    console.log('[Monster] Playing ambient sound');
                     this.playAudioSafely(this.monsterSound, 'monster');
-                } else {
-                    console.log('[Monster] Sound already playing');
                 }
-                // Start from silence with dramatic fade up
                 this.monsterVolume = 0;
-                this.monsterVolumeTarget = this.monsterBaseVolume * 1.2; // Initial boost for dramatic entrance
-            } else {
-                console.warn('[Monster] No sound object available');
+                this.monsterVolumeTarget = this.monsterBaseVolume * 1.2;
             }
-        }, 800); // Delay audio by 800ms for smoother spawn
-        
-        // After 2 seconds, reduce to normal volume
-        setTimeout(() => {
-            if (this.monsterSound && this.monsterSpawned) {
-                this.monsterVolumeTarget = this.monsterBaseVolume;
-            }
-        }, 2800);
+        }, 800);
         
         this.monsterSpawned = true;
+    }
+
+    resetMonsterAbilities() {
+        // Reset all multipliers and base values
+        this.monsterSpeedMultiplier = 1.0;
+        this.playerSpeedMultiplier = 1.0;
+        this.lightIntensityMultiplier = 1.0;
+        
+        // Reset speeds to their defaults (considering difficulty)
+        this.playerSpeed = this.basePlayerSpeed;
+        this.monsterSpeed = this.baseMonsterSpeed * this.difficultyMultipliers[this.difficulty];
+        
+        // Reset UI effects
+        if (this.minimapCanvas) this.minimapCanvas.style.opacity = '1.0';
+        
+        // Reset lighting if it was dimmed
+        this.updateLighting();
+        
+        // Hide name panel
+        const namePanel = document.getElementById('monster-name-panel');
+        if (namePanel) namePanel.style.display = 'none';
     }
 
     buildMonsterMeshCache() {
@@ -3600,33 +3615,18 @@ createObstacle(x, y, material, type) {
     }
 
     initMonsterTextures() {
-        // Load the two real terrifying monster faces, randomly pick one per spawn
+        // Load monster textures based on MONSTER_DATA
         console.log('=== MONSTER TEXTURE LOADING START ===');
         
-        const onLoad1 = (texture) => {
-            console.log('✓ Monster texture 1 loaded:', texture);
-            console.log('  - Image:', texture.image);
-            console.log('  - Image src:', texture.image ? texture.image.src : 'undefined');
-            console.log('  - Dimensions:', texture.image ? `${texture.image.width}x${texture.image.height}` : 'no image');
-        };
-        
-        const onLoad2 = (texture) => {
-            console.log('✓ Monster texture 2 loaded:', texture);
-            console.log('  - Image:', texture.image);
-            console.log('  - Image src:', texture.image ? texture.image.src : 'undefined');
-            console.log('  - Dimensions:', texture.image ? `${texture.image.width}x${texture.image.height}` : 'no image');
-        };
-        
-        const onError = (error) => {
-            console.error('✗ Monster texture loading error:', error);
-        };
-        
-        const tex1 = this.textureLoader.load('/textures/monster_face_1.png', onLoad1, undefined, onError);
-        const tex2 = this.textureLoader.load('/textures/monster_face_2.png', onLoad2, undefined, onError);
-        const tex3 = this.textureLoader.load('/textures/ghost_skull_1.png', undefined, undefined, onError);
-        const tex4 = this.textureLoader.load('/textures/ghost_skull_2.png', undefined, undefined, onError);
-        
-        this.monsterTextures.push(tex1, tex2, tex3, tex4);
+        this.monsterTextures = [];
+        MONSTER_DATA.forEach((data, index) => {
+            const texture = this.textureLoader.load(data.texture, (tex) => {
+                console.log(`✓ Monster texture ${index + 1} loaded:`, data.texture);
+            }, undefined, (err) => {
+                console.error(`✗ Error loading monster texture ${index + 1}:`, data.texture, err);
+            });
+            this.monsterTextures.push(texture);
+        });
         
         console.log('Monster textures array length:', this.monsterTextures.length);
         console.log('=== MONSTER TEXTURE LOADING END ===');
@@ -3948,6 +3948,7 @@ createObstacle(x, y, material, type) {
     }
     
     handleGameOver() {
+        this.resetMonsterAbilities();
         this.isGameOver = true;
         this.controls.unlock();
         document.getElementById('game-over').style.display = 'block';
@@ -4126,6 +4127,7 @@ createObstacle(x, y, material, type) {
     }
 
     nextLevel() {
+        this.resetMonsterAbilities();
         try {
             this.level++;
             this.mazesCompleted++; // Increment completed mazes counter
