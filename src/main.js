@@ -423,8 +423,20 @@ class Game {
             // Add a pulsing point light to the monster
             this.monsterLight = new THREE.PointLight(0xff0000, 2, 3);
             this.monsterLight.castShadow = true;
-            this.monsterLight.shadow.bias = -0.001;
+            this.monsterLight.shadow.bias = -0.005;
+            this.monsterLight.shadow.camera.near = 0.05; // Was default 0.5 — too large → causes blocky shadow projection close to walls
+            this.monsterLight.shadow.camera.far = 6;     // Covers full light range (distance=3) with margin
+            this.monsterLight.shadow.radius = 2;         // PCF softening for smooth shadow edges
             this.monster.add(this.monsterLight);
+
+            // Ensure NO child mesh of the monster casts shadows — the light comes from inside the group
+            // and we want rays to pass through the monster's own geometry unobstructed
+            this.monster.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = false;
+                    child.receiveShadow = false;
+                }
+            });
 
             // Pre-init monster sound to avoid audio-context freeze on first spawn
             this.initMonsterSound();
@@ -984,7 +996,7 @@ class Game {
             shadowBias = -0.002;
             shadowRadius = 0.3;
             flashlightSize = 256;
-            monsterSize = 128;
+            monsterSize = 512;   // Increased from 128 — avoids blocky texels at close range
             frustumSize = 15;
             frustumDistance = 60;
         } else if (this.shadowQuality === 'medium') {
@@ -992,7 +1004,7 @@ class Game {
             shadowBias = -0.0007;
             shadowRadius = 1;
             flashlightSize = 1024;
-            monsterSize = 512;
+            monsterSize = 1024;  // Increased from 512
             frustumSize = 25;
             frustumDistance = 100;
         } else if (this.shadowQuality === 'high') {
@@ -1001,7 +1013,7 @@ class Game {
             shadowBias = -0.0004;
             shadowRadius = 1.5;
             flashlightSize = 1536;
-            monsterSize = 1024;
+            monsterSize = 2048;  // Increased from 1024 — PointLight uses 6 faces, so effective res per face stays reasonable
             frustumSize = 30;
             frustumDistance = 120;
         } else if (this.shadowQuality === 'ultra') {
@@ -1010,7 +1022,7 @@ class Game {
             shadowBias = -0.0001;
             shadowRadius = 2.5;
             flashlightSize = 2048;
-            monsterSize = 1536;
+            monsterSize = 2048;  // Kept at 2048 — PointLight cube faces; 2048 is practical max before VRAM hit
             frustumSize = 40;
             frustumDistance = 160;
         }
@@ -1102,11 +1114,6 @@ class Game {
         const volumeSlider = document.getElementById('master-volume');
         if (volumeSlider) volumeSlider.addEventListener('input', (e) => {
             this.masterVolume = parseFloat(e.target.value);
-            this.applyAudioSettings();
-        });
-
-        if (krickToggle) krickToggle.addEventListener('change', (e) => {
-            this.audioGroups.krick = e.target.checked;
             this.applyAudioSettings();
         });
 
@@ -3432,13 +3439,13 @@ createObstacle(x, y, material, type) {
         
         const monsterMesh = new THREE.Mesh(geometry, curvedMaterial);
         monsterMesh.scale.set(0.75, 0.75, 0.75); // Size scaling
+        // Monster mesh must NOT cast or receive shadows — the light originates from inside it
+        // and we want it to spread evenly without the mesh geometry blocking the rays
+        monsterMesh.castShadow = false;
+        monsterMesh.receiveShadow = false;
         this.monsterMeshCache.add(monsterMesh);
-        
-        // A spooky point light to cast onto walls
-        const glowLight = new THREE.PointLight(0x00aaff, 2, 8);
-        glowLight.position.set(0, 0, 0);
-        glowLight.castShadow = true;
-        this.monsterMeshCache.add(glowLight);
+        // NOTE: The main red PointLight (monsterLight) is added separately in the setTimeout after buildMonsterMeshCache()
+        // The old duplicate glowLight (blue, castShadow=true) has been removed — it was interfering with clean shadow projection
     }
 
     spawnTorch(x, z) {

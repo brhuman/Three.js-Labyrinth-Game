@@ -19,7 +19,6 @@ export class OptionsManager {
             language: 'en',
             audioGroups: {
                 all: true,
-                krick: true,
                 monster: true,
                 facula: true
             }
@@ -138,7 +137,6 @@ export class OptionsManager {
                 // Auto-enable all sound if volume > 0
                 if (this.settings.masterVolume > 0 && !this.settings.audioGroups.all) {
                     this.settings.audioGroups.all = true;
-                    this.settings.audioGroups.krick = true;
                     this.settings.audioGroups.monster = true;
                     this.settings.audioGroups.facula = true;
                     this.updateAudioButtons();
@@ -161,8 +159,7 @@ export class OptionsManager {
                     if (audio === 'all') {
                         // Enable all audio
                         this.settings.audioGroups.all = true;
-                        this.settings.audioGroups.krick = true;
-                        this.settings.audioGroups.monster = true;
+                            this.settings.audioGroups.monster = true;
                         this.settings.audioGroups.facula = true;
                         this.updateAllAudioButtons();
                     } else {
@@ -176,7 +173,6 @@ export class OptionsManager {
                     if (audio === 'all') {
                         // Disable all audio and set volume to 0
                         this.settings.audioGroups.all = false;
-                        this.settings.audioGroups.krick = false;
                         this.settings.audioGroups.monster = false;
                         this.settings.audioGroups.facula = false;
                         this.settings.masterVolume = 0;
