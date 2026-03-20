@@ -1,8 +1,54 @@
+class MinHeap {
+    constructor() {
+        this.heap = [];
+    }
+    push(val) {
+        this.heap.push(val);
+        this.bubbleUp(this.heap.length - 1);
+    }
+    pop() {
+        if (this.heap.length === 0) return null;
+        const top = this.heap[0];
+        const bottom = this.heap.pop();
+        if (this.heap.length > 0) {
+            this.heap[0] = bottom;
+            this.bubbleDown(0);
+        }
+        return top;
+    }
+    bubbleUp(i) {
+        while (i > 0) {
+            const p = Math.floor((i - 1) / 2);
+            if (this.heap[p].f <= this.heap[i].f) break;
+            [this.heap[p], this.heap[i]] = [this.heap[i], this.heap[p]];
+            i = p;
+        }
+    }
+    bubbleDown(i) {
+        const len = this.heap.length;
+        while (true) {
+            const left = 2 * i + 1;
+            const right = 2 * i + 2;
+            let min = i;
+            if (left < len && this.heap[left].f < this.heap[min].f) min = left;
+            if (right < len && this.heap[right].f < this.heap[min].f) min = right;
+            if (min === i) break;
+            [this.heap[i], this.heap[min]] = [this.heap[min], this.heap[i]];
+            i = min;
+        }
+    }
+    get length() {
+        return this.heap.length;
+    }
+}
+
 export function findPathAStar(grid, width, height, startX, startY, endX, endY, isMonster = false) {
     if (startX === endX && startY === endY) return [];
 
-    // Priority Queue implementation (min-heap would be better, but simple sorted array is fine for maze sizes)
-    const openSet = [{x: startX, y: startY, g: 0, f: heuristic(startX, startY, endX, endY)}];
+    const openSet = new MinHeap();
+    openSet.push({x: startX, y: startY, f: heuristic(startX, startY, endX, endY)});
+    
+    // Using simple coordinate strings for Map keys
     const cameFrom = new Map();
     const gScore = new Map();
     gScore.set(`${startX},${startY}`, 0);
@@ -10,9 +56,7 @@ export function findPathAStar(grid, width, height, startX, startY, endX, endY, i
     const key = (x, y) => `${x},${y}`;
 
     while (openSet.length > 0) {
-        // Sort by f score (cheapest estimate first)
-        openSet.sort((a, b) => a.f - b.f);
-        const current = openSet.shift();
+        const current = openSet.pop();
 
         if (current.x === endX && current.y === endY) {
             return reconstructPath(cameFrom, current);
@@ -33,17 +77,15 @@ export function findPathAStar(grid, width, height, startX, startY, endX, endY, i
                     const neighborGScore = gScore.get(key(neighbor.x, neighbor.y)) ?? Infinity;
 
                     if (tentGScore < neighborGScore) {
+                        const currentKey = key(current.x, current.y);
                         cameFrom.set(key(neighbor.x, neighbor.y), {x: current.x, y: current.y});
                         gScore.set(key(neighbor.x, neighbor.y), tentGScore);
                         const f = tentGScore + heuristic(neighbor.x, neighbor.y, endX, endY);
                         
-                        const existingIdx = openSet.findIndex(item => item.x === neighbor.x && item.y === neighbor.y);
-                        if (existingIdx === -1) {
-                            openSet.push({x: neighbor.x, y: neighbor.y, g: tentGScore, f: f});
-                        } else if (f < openSet[existingIdx].f) {
-                            openSet[existingIdx].f = f;
-                            openSet[existingIdx].g = tentGScore;
-                        }
+                        // We strictly push to MinHeap. The duplicate states with higher 'f'
+                        // will be naturally skipped if their 'f' is higher, or evaluated later
+                        // but they won't trigger re-expansions since their tentGscore won't be < gScore.
+                        openSet.push({x: neighbor.x, y: neighbor.y, f: f});
                     }
                 }
             }

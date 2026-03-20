@@ -4,6 +4,7 @@ import { Maze } from './maze.js';
 import { OptionsManager } from './options-manager.js';
 import { findPathAStar, getAccessibleArea } from './utils.js';
 import { translations } from './translations.js';
+import { MonsterController } from './core/ai/MonsterController.js';
 
 class Game {
     constructor() {
@@ -132,7 +133,6 @@ class Game {
         this.listener = new THREE.AudioListener();
         this.camera.add(this.listener);
         this.monsterSound = null;
-        this.screamBuffers = [];
         this.flashlightOnSound = null;
         this.flashlightOffSound = null;
         this.isMuted = localStorage.getItem('isMuted') === 'true';
@@ -180,6 +180,7 @@ class Game {
         this.audioLoader = new THREE.AudioLoader(this.loadingManager);
         
         this.setupLoadingManager();
+        this.monsterController = new MonsterController(this);
         this.init();
 
     }
@@ -291,6 +292,7 @@ class Game {
         const starPositions = new Float32Array(STAR_COUNT * 3);
         const starColors = new Float32Array(STAR_COUNT * 3);
         const starSizes = new Float32Array(STAR_COUNT);
+        const starPhases = new Float32Array(STAR_COUNT);
         
         for (let i = 0; i < STAR_COUNT; i++) {
             // Random point on a sphere using spherical coordinates
@@ -319,12 +321,15 @@ class Game {
             
             // Size variation: most are tiny, a few are big/bright
             starSizes[i] = Math.random() < 0.05 ? 2.5 + Math.random() : 0.5 + Math.random() * 1.5;
+            // Phase for twinkling
+            starPhases[i] = Math.random() * Math.PI * 2;
         }
         
         const starGeo = new THREE.BufferGeometry();
         starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-        starGeo.setAttribute('color', new THREE.BufferAttribute(starColors, 3));
+        starGeo.setAttribute('customColor', new THREE.BufferAttribute(starColors, 3));
         starGeo.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+        starGeo.setAttribute('phase', new THREE.BufferAttribute(starPhases, 1));
         
         // Create a small circular sprite texture for the stars
         const starSprite = document.createElement('canvas');
@@ -338,17 +343,45 @@ class Game {
         spriteCtx.fillRect(0, 0, 32, 32);
         const starSpriteTex = new THREE.CanvasTexture(starSprite);
         
-        this.starMaterial = new THREE.PointsMaterial({
-            size: 1.5,
-            map: starSpriteTex,
-            vertexColors: true,
-            sizeAttenuation: true,
+        this.starUniforms = {
+            time: { value: 0.0 },
+            pointTexture: { value: starSpriteTex }
+        };
+
+        this.starMaterial = new THREE.ShaderMaterial({
+            uniforms: this.starUniforms,
+            vertexShader: `
+                attribute float size;
+                attribute float phase;
+                attribute vec3 customColor;
+                varying vec3 vColor;
+                varying float vPhase;
+                void main() {
+                    vColor = customColor;
+                    vPhase = phase;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    // Fixed point size suitable for typical screen resolution without depth attenuation vanishing
+                    gl_PointSize = size * 2.0;
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform sampler2D pointTexture;
+                varying vec3 vColor;
+                varying float vPhase;
+                void main() {
+                    vec4 texColor = texture2D(pointTexture, gl_PointCoord);
+                    float alpha = 0.5 + 0.5 * sin(time + vPhase);
+                    gl_FragColor = vec4(vColor * texColor.rgb * alpha, texColor.a * alpha);
+                }
+            `,
             transparent: true,
-            opacity: 0.7,
-            depthWrite: false,
             blending: THREE.AdditiveBlending,
-            fog: false // MUST be false: stars at distance 490 would be 100% fogged otherwise
+            depthWrite: false,
+            fog: false
         });
+        
         this.starSizes = starSizes;
         this.stars = new THREE.Points(starGeo, this.starMaterial);
         this.stars.renderOrder = -1; // Always behind moon
@@ -519,9 +552,6 @@ class Game {
             }
             
             // Stop menu music when starting game
-            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
-                this.stopAudioSafely(this.menuBackgroundMusic);
-            }
             
             this.controls.lock();
         };
@@ -730,9 +760,6 @@ class Game {
             }
 
             // Stop menu music
-            if (this.menuBackgroundMusic && this.menuBackgroundMusic.isPlaying) {
-                this.stopAudioSafely(this.menuBackgroundMusic);
-            }
         });
 
         this.controls.addEventListener('unlock', () => {
@@ -760,9 +787,6 @@ class Game {
                 this.toggleMenuBackdrop(true);
                 
                 // Play menu music
-                if (this.menuBackgroundMusic && !this.menuBackgroundMusic.isPlaying) {
-                    this.playAudioSafely(this.menuBackgroundMusic, 'menu');
-                }
             } else if (!this.isGameOver && this.isFullscreenToggling) {
                 // We're toggling fullscreen, so hide HUD but don't show menu
                 this.isPaused = true;
@@ -786,13 +810,6 @@ class Game {
         window.addEventListener('keyup', (e) => this.onKeyUp(e));
         window.addEventListener('resize', () => this.onWindowResize());
 
-        // Load scream sounds
-        const audioLoader = new THREE.AudioLoader();
-        for (let i = 1; i <= 5; i++) {
-            audioLoader.load(`/sounds/scream${i}.mp3`, (buffer) => {
-                this.screamBuffers.push(buffer);
-            });
-        }
 
         // Load flashlight sound
         this.flashlightSoundBuffer = null;
@@ -824,67 +841,11 @@ class Game {
             });
         });
 
-        // Handle preloader scream audio with multiple attempts
-        const preloaderScream = document.getElementById('preloader-scream');
-        if (preloaderScream) {
-            preloaderScream.volume = 0.4 * this.masterVolume;
-            preloaderScream.loop = true;
-            
-            // Respect Krick setting
-            if (!this.audioGroups.krick) {
-                preloaderScream.volume = 0;
-            }
-
-            // Try to play immediately
-            const tryPlay = () => {
-                setTimeout(() => {
-                    preloaderScream.play().catch(e => {
-                        console.warn('Preloader scream failed to play:', e);
-                    });
-                }, 0);
-            };
-            
-            tryPlay();
-            
-            // Try again after a short delay (in case of loading issues)
-            setTimeout(tryPlay, 100);
-            setTimeout(tryPlay, 500);
-            setTimeout(tryPlay, 1000);
-            
-            // Add click listener to start audio on first user interaction
-            const startAudioOnInteraction = () => {
-                if (preloaderScream.paused) {
-                    tryPlay();
-                }
-                document.removeEventListener('click', startAudioOnInteraction);
-                document.removeEventListener('keydown', startAudioOnInteraction);
-            };
-            
-            document.addEventListener('click', startAudioOnInteraction);
-            document.addEventListener('keydown', startAudioOnInteraction);
-            
-            // Handle tab visibility - pause when tab is inactive
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden) {
-                    // Tab is not active - pause audio
-                    if (!preloaderScream.paused) {
-                        preloaderScream.pause();
-                    }
-                } else {
-                    // Tab is active - resume audio if preloader is still visible
-                    const preloader = document.getElementById('preloader');
-                    if (preloader && preloader.style.display !== 'none') {
-                        tryPlay();
-                    }
-                }
-            });
-        }
     }
 
     setupLoadingManager() {
         const barFill = document.getElementById('preloader-bar-fill');
         const loadingStatus = document.getElementById('loading-status');
-        const preloaderScream = document.getElementById('preloader-scream');
 
         this.loadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
             const progress = (itemsLoaded / itemsTotal) * 100;
@@ -903,10 +864,6 @@ class Game {
                 preloader.style.animation = 'fadeOut 1s ease-in-out forwards';
                 setTimeout(() => {
                     preloader.style.display = 'none';
-                    if (preloaderScream && !preloaderScream.paused) {
-                        preloaderScream.pause();
-                        preloaderScream.currentTime = 0;
-                    }
                 }, 1000);
             }
         };
@@ -1104,7 +1061,6 @@ class Game {
         }
         
         localStorage.setItem('masterVolume', this.masterVolume);
-        localStorage.setItem('audio_krick', this.audioGroups.krick);
         localStorage.setItem('audio_monster', this.audioGroups.monster);
         localStorage.setItem('audio_facula', this.audioGroups.facula);
 
@@ -1112,8 +1068,6 @@ class Game {
         const volumeSlider = document.getElementById('master-volume');
         if (volumeSlider) volumeSlider.value = this.masterVolume;
 
-        const krickToggle = document.getElementById('toggle-krick');
-        if (krickToggle) krickToggle.checked = this.audioGroups.krick;
 
         const monsterToggle = document.getElementById('toggle-monster');
         if (monsterToggle) monsterToggle.checked = this.audioGroups.monster;
@@ -1122,16 +1076,6 @@ class Game {
         if (faculaToggle) faculaToggle.checked = this.audioGroups.facula;
 
         // Apply immediately to running sounds
-        const preloaderScream = document.getElementById('preloader-scream');
-        if (preloaderScream) {
-            const vol = this.audioGroups.krick ? 0.4 * this.masterVolume : 0;
-            if (!isNaN(vol)) {
-                preloaderScream.volume = vol;
-            } else {
-                preloaderScream.volume = 0;
-            }
-        }
-
         if (this.monsterSound && !this.audioGroups.monster) {
             this.monsterSound.setVolume(0);
         } else if (this.monsterSound && this.monsterSpawned) {
@@ -1161,7 +1105,6 @@ class Game {
             this.applyAudioSettings();
         });
 
-        const krickToggle = document.getElementById('toggle-krick');
         if (krickToggle) krickToggle.addEventListener('change', (e) => {
             this.audioGroups.krick = e.target.checked;
             this.applyAudioSettings();
@@ -1271,24 +1214,32 @@ class Game {
             // Remove all objects except camera and sky
             const toRemove = [];
             this.scene.traverse((object) => {
-                if (object !== this.scene && 
-                    object !== this.camera && 
-                    object !== this.sky && 
-                    object !== this.moon &&         // Never delete the moon
-                    object !== this.sky &&
-                    object !== this.stars &&         // Never delete the starfield
-                    object !== this.moonLight &&
-                    object !== this.monster &&      // Never remove the monster
-                    object !== this.monsterSound && // Keep monster's heart beating
-                    object !== this.monsterLight && // Keep monster's glow
-                    object !== this.flashlight &&     // Never delete the flashlight
-                    object !== this.flashlightHalo && // Never delete the flashlight halo
-                    object !== this.flashlightTarget && // Never delete the flashlight target
-                    object !== this.goal && // Never delete the goal glow
-                    object !== this.goalLight && // Never delete the goal light
-                    object !== this.startGlow && // Never delete the start glow
-                    object !== this.startGlowLight && // Never delete the start glow light
-                    !object.isAmbientLight) {
+                let isProtected = false;
+                let current = object;
+                while (current) {
+                    if (current === this.camera || 
+                        current === this.sky || 
+                        current === this.moon || 
+                        current === this.stars || 
+                        current === this.moonLight || 
+                        current === this.monster || 
+                        current === this.monsterSound || 
+                        current === this.monsterLight || 
+                        current === this.flashlight || 
+                        current === this.flashlightHalo || 
+                        current === this.flashlightTarget || 
+                        current === this.goal || 
+                        current === this.goalLight || 
+                        current === this.startGlow || 
+                        current === this.startGlowLight) {
+                        isProtected = true;
+                        break;
+                    }
+                    current = current.parent;
+                }
+                
+                // Do not remove the scene itself
+                if (!isProtected && object !== this.scene && !object.isAmbientLight && !object.isHemisphereLight) {
                     toRemove.push(object);
                 }
             });
@@ -1347,6 +1298,26 @@ class Game {
         }
     }
 
+    getMoonPositionForLevel(level) {
+        // Pseudo-random angle based on level number for consistent positioning
+        const seed = level * 1337;
+        const x = Math.sin(seed) * 10000;
+        const randomFraction = x - Math.floor(x);
+        const angle = randomFraction * Math.PI * 2;
+        
+        const distance = 250;
+        // height between 100 and 200
+        const y2 = Math.sin(seed + 1) * 10000;
+        const randomHeightFraction = y2 - Math.floor(y2);
+        const height = 100 + randomHeightFraction * 100;
+        
+        return {
+            x: Math.cos(angle) * distance,
+            y: height,
+            z: Math.sin(angle) * distance
+        };
+    }
+
     updateLighting() {
         // Remove old lights if present (English comments)
         const lightsToRemove = [];
@@ -1377,20 +1348,22 @@ class Game {
         this.renderer.setClearColor(fogColor);
 
         // 2. Уменьшаем ambient light с уровнем (темнее становится)
-        const ambientIntensity = Math.max(0.4 - (this.level * 0.05), 0.15);
+        const ambientIntensity = Math.max(0.32 - (this.level * 0.05), 0.12);
         const ambientLight = new THREE.AmbientLight(0x404040, ambientIntensity);
         ambientLight.isAmbientLight = true;
         this.scene.add(ambientLight);
 
         // 3. Hemisphere light тоже уменьшается с уровнем
-        const hemiIntensity = Math.max(0.3 - (this.level * 0.03), 0.1);
+        const hemiIntensity = Math.max(0.24 - (this.level * 0.03), 0.08);
         const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x2F4F2F, hemiIntensity);
         this.scene.add(hemiLight);
 
+        const moonPos = this.getMoonPositionForLevel(this.level);
+
         // 4. УЛУЧШЕННОЕ moon light с тенями и эффектом свечения
-        this.moonLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        this.moonLight = new THREE.DirectionalLight(0xffffff, 0.64);
         this.moonLight.castShadow = true;
-        this.moonLight.position.set(0, 150, -250); // Same position as moon sprite
+        this.moonLight.position.set(moonPos.x, moonPos.y, moonPos.z);
         this.moonLight.target.position.set(0, 0, 0);
         this.scene.add(this.moonLight.target);
         this.scene.add(this.moonLight);
@@ -1401,17 +1374,22 @@ class Game {
         }
         
         // Создаем мягкий свет для эффекта свечения Луны
-        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.3, 100);
-        this.moonGlow.position.set(0, 150, -250); // Такая же позиция как у Луны
+        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.24, 100);
+        this.moonGlow.position.set(moonPos.x, moonPos.y, moonPos.z);
         this.moonGlow.decay = 0.5; // Медленное затухание для эффекта ореола
         this.scene.add(this.moonGlow);
+
+        // Update the visual moon sprite position
+        if (this.moon) {
+            this.moon.position.set(moonPos.x, moonPos.y, moonPos.z);
+        }
 
         // 6. Добавляем дополнительный мягкий свет для атмосферного свечения
         if (this.moonAmbientGlow) {
             this.scene.remove(this.moonAmbientGlow);
         }
         
-        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.05);
+        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.04);
         this.scene.add(this.moonAmbientGlow);
 
         // Обновляем настройки теней для Луны
@@ -1433,31 +1411,31 @@ class Game {
                 shadowSize = 256;
                 shadowBias = -0.002;
                 shadowRadius = 0.3;
-                frustumSize = 15;
-                frustumDistance = 60;
+                frustumSize = 30;
+                frustumDistance = 350;
                 break;
             case 'medium':
                 shadowSize = 1024;
                 shadowBias = -0.0007;
                 shadowRadius = 1;
-                frustumSize = 25;
-                frustumDistance = 100;
+                frustumSize = 40;
+                frustumDistance = 400;
                 break;
             case 'high':
                 shadowSize = 2048;
                 shadowType = THREE.PCFSoftShadowMap;
                 shadowBias = -0.0004;
                 shadowRadius = 1.5;
-                frustumSize = 30;
-                frustumDistance = 120;
+                frustumSize = 60;
+                frustumDistance = 450;
                 break;
             case 'ultra':
                 shadowSize = 4096;
                 shadowType = THREE.PCFSoftShadowMap;
                 shadowBias = -0.0001;
                 shadowRadius = 2.5;
-                frustumSize = 40;
-                frustumDistance = 160;
+                frustumSize = 80;
+                frustumDistance = 500;
                 break;
         }
         
@@ -1729,21 +1707,21 @@ class Game {
         if (!this.moonLight) return;
         
         // Dynamic frustum size based on shadow quality
-        let frustumSize = 20;
-        let frustumDistance = 80;
+        let frustumSize = 30;
+        let frustumDistance = 350;
         let shadowResolution = 512;
         
         if (this.shadowQuality === 'medium') {
-            frustumSize = 25;
-            frustumDistance = 100;
+            frustumSize = 40;
+            frustumDistance = 400;
             shadowResolution = 1024;
         } else if (this.shadowQuality === 'high') {
-            frustumSize = 30;
-            frustumDistance = 120;
+            frustumSize = 60;
+            frustumDistance = 450;
             shadowResolution = 2048;
         } else if (this.shadowQuality === 'ultra') {
-            frustumSize = 40;
-            frustumDistance = 160;
+            frustumSize = 80;
+            frustumDistance = 500;
             shadowResolution = 4096;
         }
         
@@ -3073,7 +3051,7 @@ createObstacle(x, y, material, type) {
             }
 
             if (this.monsterSpawned) {
-                this.updateMonster(delta);
+                this.monsterController.update(delta);
             }
 
             // Keyboard rotation (Arrow keys)
@@ -3278,6 +3256,11 @@ createObstacle(x, y, material, type) {
             this.animateGlowEffect(this.startGlow, -glowTime);
         }
 
+        // Animate stars
+        if (this.starUniforms) {
+            this.starUniforms.time.value = performance.now() * 0.002;
+        }
+
         this.renderer.render(this.scene, this.camera);
         } // Close FPS limiting block
     }
@@ -3301,6 +3284,27 @@ createObstacle(x, y, material, type) {
         // Spawn monster at player start position
         this.monster.position.set(0, 0.8, 1);
         this.monster.visible = true;
+
+        // Randomly pick a ghost texture and set a matching light color
+        if (this.monsterTextures && this.monsterTextures.length > 0) {
+            const randomIndex = Math.floor(Math.random() * this.monsterTextures.length);
+            const randomTex = this.monsterTextures[randomIndex];
+            
+            const mesh = this.monster.children.find(child => child.isMesh);
+            if (mesh) {
+                mesh.material.map = randomTex;
+                mesh.material.needsUpdate = true;
+            }
+            
+            // Adjust light color depending on the loaded texture index
+            const light = this.monster.children.find(child => child.isPointLight);
+            if (light) {
+                // If it's a red texture vs blue/green texture 
+                // Using 0xff0000 (red) for face_2/ghost_2 and 0x00aaff (blue) for face_1/ghost_1
+                const isRed = randomIndex % 2 !== 0; 
+                light.color.setHex(isRed ? 0xff0000 : 0x00aaff);
+            }
+        }
         
         // Force all children to be visible
         this.monster.traverse((child) => {
@@ -3354,8 +3358,7 @@ createObstacle(x, y, material, type) {
         );
         
         if (initialPath.length > 0) {
-            this.monsterPath = initialPath;
-            this.updateMonsterTarget();
+            this.monsterController.recalculateAStarPath();
         }
         
         // Delayed audio start to prevent crackling and add dramatic effect
@@ -3394,39 +3397,48 @@ createObstacle(x, y, material, type) {
     }
 
     buildMonsterMeshCache() {
-        // Создаем красный монстра-шар
-        const geometry = new THREE.SphereGeometry(0.8, 32, 32);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: 0xff0000, // Ярко-красный цвет
-            emissive: 0xff0000, // Красное свечение
-            emissiveIntensity: 0.8, // Сильное свечение
-            roughness: 0.3,
-            metalness: 0.7
+        this.monsterMeshCache = new THREE.Group();
+        
+        // --- 1. Edge-fading Alpha Map ---
+        // Generates a soft radial gradient canvas to fade out the bounding box hard edges
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+        gradient.addColorStop(0, 'white');
+        gradient.addColorStop(0.65, 'white');
+        gradient.addColorStop(1, 'black'); // Alpha maps treat black as totally transparent
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 512);
+        const alphaTexture = new THREE.CanvasTexture(canvas);
+        
+        // --- 2. Curved (Volumetric) Geometry ---
+        // Instead of a flat Sprite, we use a slice of a cylinder so the texture "bulges" convexly
+        // radius=0.5, height=1.0, 16 segments, openEnded=true, thetaStart=-72deg, thetaLength=144deg
+        const radius = 0.5;
+        const aspectHeight = 1.0;
+        const geometry = new THREE.CylinderGeometry(radius, radius, aspectHeight, 16, 1, true, -Math.PI / 2.5, Math.PI / 1.25);
+        
+        const curvedMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false, // Prevents clipping artifacts when near walls
+            depthTest: true,
+            alphaMap: alphaTexture,
+            side: THREE.DoubleSide
         });
         
-        this.monsterMeshCache = new THREE.Group();
-        const monsterBody = new THREE.Mesh(geometry, material);
-        monsterBody.castShadow = true;
-        monsterBody.receiveShadow = true;
-        this.monsterMeshCache.add(monsterBody);
+        const monsterMesh = new THREE.Mesh(geometry, curvedMaterial);
+        monsterMesh.scale.set(0.75, 0.75, 0.75); // Size scaling
+        this.monsterMeshCache.add(monsterMesh);
         
-        // Добавляем пульсирующий красный свет
-        const glowLight = new THREE.PointLight(0xff0000, 2, 10);
+        // A spooky point light to cast onto walls
+        const glowLight = new THREE.PointLight(0x00aaff, 2, 8);
         glowLight.position.set(0, 0, 0);
         glowLight.castShadow = true;
         this.monsterMeshCache.add(glowLight);
-        
-        // Добавляем эффект ореола с помощью полупрозмерной сферы
-        const glowGeo = new THREE.SphereGeometry(1.2, 16, 16);
-        const glowMat = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.3,
-            blending: THREE.AdditiveBlending,
-            side: THREE.BackSide
-        });
-        const glowSphere = new THREE.Mesh(glowGeo, glowMat);
-        this.monsterMeshCache.add(glowSphere);
     }
 
     spawnTorch(x, z) {
@@ -3576,9 +3588,10 @@ createObstacle(x, y, material, type) {
         
         const tex1 = this.textureLoader.load('/textures/monster_face_1.png', onLoad1, undefined, onError);
         const tex2 = this.textureLoader.load('/textures/monster_face_2.png', onLoad2, undefined, onError);
+        const tex3 = this.textureLoader.load('/textures/ghost_skull_1.png', undefined, undefined, onError);
+        const tex4 = this.textureLoader.load('/textures/ghost_skull_2.png', undefined, undefined, onError);
         
-        this.monsterTextures.push(tex1);
-        this.monsterTextures.push(tex2);
+        this.monsterTextures.push(tex1, tex2, tex3, tex4);
         
         console.log('Monster textures array length:', this.monsterTextures.length);
         console.log('=== MONSTER TEXTURE LOADING END ===');
@@ -3694,20 +3707,6 @@ createObstacle(x, y, material, type) {
         };
         
         updateNoise();
-    }
-
-    initMenuBackgroundMusic() {
-        this.menuBackgroundMusic = new THREE.Audio(this.listener);
-        this.menuBackgroundMusic.setLoop(true);
-        this.menuBackgroundMusic.setVolume(0.3);
-        
-        const audioLoader = new THREE.AudioLoader();
-        audioLoader.load('/sounds/scream3.mp3', (buffer) => {
-            this.menuBackgroundMusic.setBuffer(buffer);
-            if (!this.gameStarted) {
-                this.playAudioSafely(this.menuBackgroundMusic, 'menu');
-            }
-        });
     }
 
     initFlashlightSounds() {
@@ -3831,247 +3830,6 @@ createObstacle(x, y, material, type) {
         scheduleHowl();
     }
 
-    updateMonsterPerformance() {
-        const distance = this.camera.position.distanceTo(this.monster.position);
-        
-        // DEBUG: Always keep monster visible for testing
-        // Comment out distance-based optimization for now
-        this.monster.visible = true;
-        this.monsterLight.intensity = 2;
-        this.monsterLight.castShadow = true;
-        
-        /* Original distance-based optimization - disabled for debugging
-        // Aggressive optimization based on distance
-        if (distance > 20) {
-            // Far away - minimal rendering
-            this.monsterLight.castShadow = false;
-            this.monsterLight.intensity = 0.2;
-            this.monster.visible = false; // Hide completely when far
-        } else if (distance > 15) {
-            // Medium distance - reduced quality
-            this.monsterLight.castShadow = false;
-            this.monsterLight.intensity = 0.5;
-            this.monster.visible = true;
-        } else if (distance > 8) {
-            // Close - reduced shadows
-            this.monsterLight.castShadow = false;
-            this.monsterLight.intensity = 1.5;
-            this.monster.visible = true;
-        } else {
-            // Very close - full quality
-            this.monsterLight.castShadow = true;
-            this.monsterLight.intensity = 2;
-            this.monster.visible = true;
-        }
-        */
-    }
-
-    updateMonster(delta) {
-        if (!this.monsterSpawned || !this.monster || this.isGameOver) return;
-        
-        // Optimized shadows based on distance
-        this.updateMonsterPerformance();
-        
-        const timeOffset = Date.now() / 200;
-        
-        // Night-time lowering effect - monster crouches slightly during darker levels
-        const nightLowering = this.level > 2 ? 0.1 : 0; // Lower more on darker levels
-        
-        // Check if monster needs to crouch for upcoming obstacles
-        const needsToCrouch = this.checkMonsterCrouchNeed();
-        this.monsterTargetCrouchHeight = needsToCrouch ? 0.25 : 0; // Crouch down by 0.25 units
-        
-        // Smooth crouch animation
-        if (Math.abs(this.monsterCrouchHeight - this.monsterTargetCrouchHeight) > 0.01) {
-            const crouchDiff = this.monsterTargetCrouchHeight - this.monsterCrouchHeight;
-            this.monsterCrouchHeight += crouchDiff * this.monsterCrouchSpeed * delta;
-        } else {
-            this.monsterCrouchHeight = this.monsterTargetCrouchHeight;
-        }
-        
-        // Apply all height effects
-        this.monster.position.y = 0.5 + Math.sin(timeOffset) * 0.1 - nightLowering - this.monsterCrouchHeight;
-
-        // Pulsating effect for red monster
-        const pulseScale = 1.0 + Math.sin(Date.now() / 300) * 0.1; // Faster, more noticeable pulse
-        
-        // Update glow light intensity
-        const glowLight = this.monster.children.find(child => child instanceof THREE.PointLight);
-        if (glowLight) {
-            const pulseIntensity = 2 + Math.sin(Date.now() / 300) * 1; // Pulsate between 1 and 3
-            glowLight.intensity = pulseIntensity;
-        }
-        
-        // Combine pulsating and crouch scale effects
-        const crouchScale = 1.0 - (this.monsterCrouchHeight * 0.15); // Slightly smaller when crouched
-        const finalScale = pulseScale * crouchScale;
-        this.monster.scale.set(finalScale, finalScale, finalScale);
-
-        // Direct movement towards player with obstacle avoidance
-        const dx = this.camera.position.x - this.monster.position.x;
-        const dz = this.camera.position.z - this.monster.position.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        
-        if (dist > 0.05) {
-            // Check if there's a clear line of sight
-            const hasLineOfSight = this.checkLineOfSight(
-                this.monster.position.x, 
-                this.monster.position.z,
-                this.camera.position.x, 
-                this.camera.position.z
-            );
-            
-            let targetX, targetZ;
-            
-            if (hasLineOfSight) {
-                // Direct line of sight - move straight to player
-                targetX = this.camera.position.x;
-                targetZ = this.camera.position.z;
-            } else {
-                // No line of sight - use pathfinding but update more frequently
-                const now = performance.now();
-                // If we're seemingly stuck, update path immediately
-                const isLikelyStuck = this.monsterStuckTime > 0.5; 
-                
-                if (now - this.lastPathUpdateTime > (isLikelyStuck ? 100 : 250)) {
-                    const currentCellX = Math.floor(this.monster.position.x + 0.5);
-                    const currentCellZ = Math.floor(this.monster.position.z + 0.5);
-                    const playerCellX = Math.floor(this.camera.position.x + 0.5);
-                    const playerCellZ = Math.floor(this.camera.position.z + 0.5);
-                    
-                    const newPath = findPathAStar(
-                        this.grid, this.mazeSize, this.mazeSize,
-                        currentCellX, currentCellZ,
-                        playerCellX, playerCellZ,
-                        true // isMonster
-                    );
-                    
-                    if (newPath.length > 0) {
-                        this.monsterPath = newPath;
-                        this.currentPathIndex = 0;
-                        this.updateMonsterTarget();
-                    }
-                    this.lastPathUpdateTime = now;
-                }
-                
-                // Use pathfinding target
-                if (this.monsterTargetPosition) {
-                    targetX = this.monsterTargetPosition.x;
-                    targetZ = this.monsterTargetPosition.z;
-                    
-                    // Check if we reached the current waypoint
-                    const waypointDx = targetX - this.monster.position.x;
-                    const waypointDz = targetZ - this.monster.position.z;
-                    const waypointDist = Math.sqrt(waypointDx * waypointDx + waypointDz * waypointDz);
-                    
-                    if (waypointDist < 0.1) {
-                        this.currentPathIndex++;
-                        this.updateMonsterTarget();
-                    }
-                } else {
-                    // Fallback to direct movement
-                    targetX = this.camera.position.x;
-                    targetZ = this.camera.position.z;
-                }
-            }
-            
-            // Smooth movement towards target
-            const moveDx = targetX - this.monster.position.x;
-            const moveDz = targetZ - this.monster.position.z;
-            const moveDist = Math.sqrt(moveDx * moveDx + moveDz * moveDz);
-            
-            if (moveDist > 0.05) {
-                // Monster slows down when crouching under obstacles (15% slowdown vs 30% for player)
-                const currentMonsterSpeed = this.monsterCrouchHeight > 0.01 ? this.monsterSpeed * 0.85 : this.monsterSpeed;
-                const moveX = (moveDx / moveDist) * currentMonsterSpeed * delta;
-                const moveZ = (moveDz / moveDist) * currentMonsterSpeed * delta;
-                
-                // Track previous position to detect if we're actually moving
-                const oldX = this.monster.position.x;
-                const oldZ = this.monster.position.z;
-
-                // Radius-based collision check (monster is ~0.8 wide, so 0.3 radius is enough for sliding)
-                const monsterRadius = 0.3; 
-                const canMoveTo = (x, z) => {
-                    const checkX = Math.floor(x + 0.5);
-                    const checkZ = Math.floor(z + 0.5);
-                    
-                    // Basic bounds check
-                    if (checkX < 0 || checkX >= this.mazeSize || checkZ < 0 || checkZ >= this.mazeSize) return false;
-                    
-                    // Simple wall check at point
-                    if (this.grid[checkZ][checkX] === 1) return false;
-
-                    // Radius checks (simplified for better sliding)
-                    const offsets = [
-                        {x: monsterRadius, z: 0}, {x: -monsterRadius, z: 0},
-                        {x: 0, z: monsterRadius}, {x: 0, z: -monsterRadius}
-                    ];
-
-                    for (const off of offsets) {
-                        const cellX = Math.floor(x + off.x + 0.5);
-                        const cellZ = Math.floor(z + off.z + 0.5);
-                        if (cellX < 0 || cellX >= this.mazeSize || cellZ < 0 || cellZ >= this.mazeSize) return false;
-                        if (this.grid[cellZ][cellX] === 1) return false;
-                    }
-                    return true;
-                };
-
-                let moved = false;
-                // Try full movement first
-                if (canMoveTo(this.monster.position.x + moveX, this.monster.position.z + moveZ)) {
-                    this.monster.position.x += moveX;
-                    this.monster.position.z += moveZ;
-                    moved = true;
-                } else {
-                    // SLIDING: Try moving along one axis if the combined movement is blocked
-                    const canMoveX = canMoveTo(this.monster.position.x + moveX, this.monster.position.z);
-                    const canMoveZ = canMoveTo(this.monster.position.x, this.monster.position.z + moveZ);
-
-                    if (canMoveX) {
-                        this.monster.position.x += moveX * 1.1; // Slight speed boost to compensate for friction
-                        moved = true;
-                    }
-                    if (canMoveZ) {
-                        this.monster.position.z += moveZ * 1.1;
-                        moved = true;
-                    }
-                }
-
-                // Stuck detection and recovery
-                const distMoved = Math.sqrt(Math.pow(this.monster.position.x - oldX, 2) + Math.pow(this.monster.position.z - oldZ, 2));
-                if (distMoved < currentMonsterSpeed * delta * 0.2) { // Moving at < 20% intended speed
-                    this.monsterStuckTime = (this.monsterStuckTime || 0) + delta;
-                    if (this.monsterStuckTime > 1.0) { // Stuck for 1 second
-                        // Recovery: Nudge towards target or slightly away from walls
-                        const nudgeX = (targetX - this.monster.position.x) > 0 ? 0.05 : -0.05;
-                        const nudgeZ = (targetZ - this.monster.position.z) > 0 ? 0.05 : -0.05;
-                        if (canMoveTo(this.monster.position.x + nudgeX, this.monster.position.z)) this.monster.position.x += nudgeX;
-                        if (canMoveTo(this.monster.position.x, this.monster.position.z + nudgeZ)) this.monster.position.z += nudgeZ;
-                        
-                        // Force a path recalculation if far from player
-                        if (dist > 2.0) this.lastPathUpdateTime = 0;
-                    }
-                } else {
-                    this.monsterStuckTime = 0;
-                }
-                
-                // Smooth rotation towards movement direction (only if actually moving)
-                if (moved) {
-                    const angle = Math.atan2(this.monster.position.x - oldX, this.monster.position.z - oldZ);
-                    const targetRotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
-                    this.monster.quaternion.slerp(targetRotation, 0.15);
-                }
-            }
-        }
-
-        // Check for game over collision
-        const distToPlayer = this.camera.position.distanceTo(this.monster.position);
-        if (distToPlayer < 0.6) {
-            this.handleGameOver();
-        }
-    }
-    
     // Get monster spawn delay based on level (10s → 9s → 8s → 7s → 6s → 5s → 5s...)
     getMonsterSpawnDelay() {
         const delays = [10000, 9000, 8000, 7000, 6000, 5000]; // Levels 1-6
@@ -4099,44 +3857,6 @@ createObstacle(x, y, material, type) {
             this.playerLeftStartArea = true;
             this.leftStartTime = Date.now();
             return true;
-        }
-        
-        return false;
-    }
-    
-    // Check if monster needs to crouch for upcoming obstacles
-    checkMonsterCrouchNeed() {
-        const checkDistance = 1.5; // Check 1.5 units ahead
-        const monsterX = this.monster.position.x;
-        const monsterZ = this.monster.position.z;
-        
-        // Get movement direction
-        const dx = this.camera.position.x - monsterX;
-        const dz = this.camera.position.z - monsterZ;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        
-        if (dist < 0.01) return false; // Not moving
-        
-        // Normalize direction
-        const dirX = (dx / dist) * checkDistance;
-        const dirZ = (dz / dist) * checkDistance;
-        
-        // Check positions along the movement path
-        const checkPoints = [
-            {x: monsterX + dirX * 0.5, z: monsterZ + dirZ * 0.5}, // Close check
-            {x: monsterX + dirX, z: monsterZ + dirZ}, // Medium check  
-            {x: monsterX + dirX * 1.5, z: monsterZ + dirZ * 1.5} // Far check
-        ];
-        
-        for (const point of checkPoints) {
-            const cellX = Math.floor(point.x + 0.5);
-            const cellZ = Math.floor(point.z + 0.5);
-            
-            if (cellX >= 0 && cellX < this.mazeSize && cellZ >= 0 && cellZ < this.mazeSize) {
-                if (this.grid[cellZ][cellX] === 4) {
-                    return true; // Crouch beam detected ahead
-                }
-            }
         }
         
         return false;
@@ -4192,25 +3912,6 @@ createObstacle(x, y, material, type) {
         }
     }
     
-    // Helper method to compare paths
-    pathsAreEqual(path1, path2) {
-        if (path1.length !== path2.length) return false;
-        for (let i = 0; i < path1.length; i++) {
-            if (path1[i][0] !== path2[i][0] || path1[i][1] !== path2[i][1]) return false;
-        }
-        return true;
-    }
-    
-    // Update monster's target position based on current path index
-    updateMonsterTarget() {
-        if (this.monsterPath.length > 0 && this.currentPathIndex < this.monsterPath.length) {
-            const targetCell = this.monsterPath[this.currentPathIndex];
-            this.monsterTargetPosition = new THREE.Vector3(targetCell[0], 0.5, targetCell[1]);
-        } else {
-            this.monsterTargetPosition = null;
-        }
-    }
-    
     handleGameOver() {
         this.isGameOver = true;
         this.controls.unlock();
@@ -4250,7 +3951,6 @@ createObstacle(x, y, material, type) {
         document.getElementById('total-death-time').textContent = totalTimeString;
         document.getElementById('death-mazes').textContent = this.mazesCompleted;
         
-        this.playDeathScream();
         // Monster sound intentionally keeps playing here — creepy effect during death screen
 
         // Reset Game state without instantly restarting
@@ -4285,25 +3985,6 @@ createObstacle(x, y, material, type) {
             this.clearMaze();
             this.buildMaze();
         }, 50);
-    }
-
-    playDeathScream() {
-        // Always play scream5.mp3 (index 4 in the array)
-        if (this.screamBuffers.length < 5) return;
-        
-        const scream = new THREE.Audio(this.listener);
-        const screamBuffer = this.screamBuffers[4]; // scream5.mp3 is at index 4
-        
-        scream.setBuffer(screamBuffer);
-        scream.setVolume(2.1); // 3x louder
-        scream.play();
-
-        // Ensure scream is not longer than 5 seconds
-        setTimeout(() => {
-            if (scream.isPlaying) {
-                scream.stop();
-            }
-        }, 5000);
     }
 
     updateExploration() {
