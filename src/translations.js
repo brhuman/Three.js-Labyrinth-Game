@@ -64,7 +64,20 @@ export const translations = {
         level: "Level",
         time: "Time",
         battery: "BATTERY",
-        monster_spawning: "MONSTER SPAWNING"
+        monster_spawning: "MONSTER SPAWNING",
+        monster_initial: "",
+        hint_fullscreen: "L — Fullscreen",
+        hint_flashlight: "F — Flashlight",
+        hint_crouch: "C/Ctrl — Crouch",
+        monster_0_name: "The Hollow",
+        monster_0_ability: "+10% Monster Speed",
+        monster_1_ability: "-12% Player Speed",
+        monster_2_ability: "+15% Monster Speed",
+        monster_3_ability: "-60% Light Intensity",
+        monster_0_desc: "A swift phantom that moves <span style=\"color: #ff4444; font-weight: bold;\">10% faster</span> than the player.",
+        monster_1_desc: "Its gaze weakens your resolve, slowing down the player by <span style=\"color: #ff4444; font-weight: bold;\">12%</span>.",
+        monster_2_desc: "A more powerful phantom. Moves <span style=\"color: #ff4444; font-weight: bold;\">15% faster</span> than the player.",
+        monster_3_desc: "Consumes light, making flashlight and moonlight <span style=\"color: #ff4444; font-weight: bold;\">60% dimmer</span>."
     },
     ru: {
         game_title: "СМЕРТЕЛЬНЫЙ ЛАБИРИНТ",
@@ -131,7 +144,20 @@ export const translations = {
         level: "Уровень",
         time: "Время",
         battery: "БАТАРЕЯ",
-        monster_spawning: "ПОЯВЛЕНИЕ МОНСТРА"
+        monster_spawning: "ПОЯВЛЕНИЕ МОНСТРА",
+        monster_initial: "",
+        hint_fullscreen: "L — Экран",
+        hint_flashlight: "F — Фонарик",
+        hint_crouch: "C/Ctrl — Присесть",
+        monster_0_name: "Пустота",
+        monster_0_ability: "+10% Скорость монстра",
+        monster_1_ability: "-12% Скорость игрока",
+        monster_2_ability: "+15% Скорость монстра",
+        monster_3_ability: "-60% Интенсивность света",
+        monster_0_desc: "Быстрый фантом, который движется на <span style=\"color: #ff4444; font-weight: bold;\">10% быстрее</span> игрока.",
+        monster_1_desc: "Его взор ослабляет вашу волю, замедляя игрока на <span style=\"color: #ff4444; font-weight: bold;\">12%</span>.",
+        monster_2_desc: "Более могущественный призрак. Движется на <span style=\"color: #ff4444; font-weight: bold;\">15% быстрее</span> игрока.",
+        monster_3_desc: "Поглощает свет, делая фонарик и лунный свет на <span style=\"color: #ff4444; font-weight: bold;\">60% темнее</span>."
     },
     ua: {
         game_title: "СМЕРТЕЛЬНИЙ ЛАБІРИНТ",
@@ -198,6 +224,19 @@ export const translations = {
         level: "Рівень",
         time: "Час",
         battery: "БАТАРЕЯ",
-        monster_spawning: "ПОЯВА МОНСТРА"
+        monster_spawning: "ПОЯВА МОНСТРА",
+        monster_initial: "",
+        hint_fullscreen: "L — Екран",
+        hint_flashlight: "F — Ліхтарик",
+        hint_crouch: "C/Ctrl — Присісті",
+        monster_0_name: "Порожнеча",
+        monster_0_ability: "+10% Швидкість монстра",
+        monster_1_ability: "-12% Швидкість гравця",
+        monster_2_ability: "+15% Швидкість монстра",
+        monster_3_ability: "-60% Інтенсивність світла",
+        monster_0_desc: "Швидкий фантом, який рухається на <span style=\"color: #ff4444; font-weight: bold;\">10% швидше</span> за гравця.",
+        monster_1_desc: "Його погляд послаблює вашу волю, сповільнюючи гравця на <span style=\"color: #ff4444; font-weight: bold;\">12%</span>.",
+        monster_2_desc: "Більш могутній привид. Рухається на <span style=\"color: #ff4444; font-weight: bold;\">15% швидше</span> за гравця.",
+        monster_3_desc: "Поглинає світло, роблячи ліхтарик і місячне світло на <span style=\"color: #ff4444; font-weight: bold;\">60% темнішим</span>."
     }
 };

@@ -86,6 +86,7 @@ canvas {
   border-radius: 16px;
   padding: 20px;
   pointer-events: auto;
+  text-align: center;
 }
 
 #menu, #game-over {
@@ -141,7 +142,7 @@ h1 {
 }
 
 .lore-box {
-  text-align: left;
+  text-align: center;
   background: rgba(0, 0, 0, 0.5);
   padding: 15px;
   border-radius: 8px;
@@ -375,87 +376,86 @@ button:active {
   transform: scale(0.95);
 }
 
-/* Flashlight Hint Styles */
-.flashlight-hint {
+/* Consolidated Game Hint Styles */
+.game-hint {
   position: fixed;
   bottom: 80px;
   left: 50%;
-  transform: translate(-50%, 0);
+  transform: translate(-50%, 0) scale(0.9);
   background: linear-gradient(135deg, rgba(20, 20, 30, 0.95), rgba(10, 10, 20, 0.95));
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 2px solid rgba(255, 200, 100, 0.3);
+  border: 1px solid rgba(255, 51, 51, 0.3);
   border-radius: 20px;
-  padding: 30px 40px;
+  padding: 15px 25px;
   text-align: center;
   z-index: 1000;
   opacity: 0;
-  transform: translate(-50%, 0) scale(0.8);
   transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 
-    0 0 50px rgba(255, 200, 100, 0.2),
+    0 0 30px rgba(255, 51, 51, 0.1),
     0 10px 40px rgba(0, 0, 0, 0.5),
-    inset 0 0 20px rgba(255, 200, 100, 0.1);
+    inset 0 0 10px rgba(255, 255, 255, 0.05);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.flashlight-hint.show {
+.game-hint.show {
   opacity: 1;
   transform: translate(-50%, 0) scale(1);
   pointer-events: auto;
 }
 
-.flashlight-hint.fade-out {
+.game-hint.fade-out {
   opacity: 0;
-  transform: translate(-50%, 0) scale(0.9);
+  transform: translate(-50%, 0) scale(0.95);
 }
 
-.flashlight-icon {
-  font-size: 3rem;
-  margin-bottom: 15px;
-  animation: flashlight-pulse 2s ease-in-out infinite;
-  filter: drop-shadow(0 0 20px rgba(255, 200, 100, 0.6));
-}
-
-.flashlight-text {
-  color: #ffffff;
-  font-size: 1.3rem;
-  font-weight: 600;
-  margin-bottom: 8px;
-  text-shadow: 0 0 10px rgba(255, 200, 100, 0.3);
-}
-
-.flashlight-subtitle {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.9rem;
-  font-weight: 400;
-  font-style: italic;
-}
-
-.flashlight-text kbd {
-  display: inline-block;
-  background: rgba(255, 200, 100, 0.2);
-  border: 1px solid rgba(255, 200, 100, 0.4);
-  border-radius: 6px;
-  padding: 4px 8px;
-  margin: 0 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 1.1rem;
+.hint-title {
+  color: var(--accent-color);
+  font-size: 0.7rem;
   font-weight: 700;
-  color: #ffc864;
-  text-shadow: 0 0 5px rgba(255, 200, 100, 0.5);
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  opacity: 0.8;
+  margin-bottom: 5px;
 }
 
-@keyframes flashlight-pulse {
-  0%, 100% {
-    transform: scale(1);
-    filter: drop-shadow(0 0 20px rgba(255, 200, 100, 0.6));
-  }
-  50% {
-    transform: scale(1.1);
-    filter: drop-shadow(0 0 30px rgba(255, 200, 100, 0.8));
-  }
+.hint-items {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  align-items: center;
+}
+
+.hint-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.3s ease;
+}
+
+.hint-icon {
+  font-size: 1.2rem;
+  filter: drop-shadow(0 0 10px rgba(255, 51, 51, 0.4));
+}
+
+.hint-text {
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+@keyframes hint-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
 }
 
 /* Monster Timer Styles */
@@ -1258,4 +1258,41 @@ button.selected,
       0 12px 24px rgba(139, 0, 0, 0.9),
       0 18px 36px rgba(220, 20, 60, 0.7);
   }
+}
+
+.hud-stat-panel {
+  width: 180px !important;
+  height: 52px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  align-items: center !important;
+  padding: 4px 8px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  min-width: unset !important;
+  margin: 0 auto !important;
+}
+
+#monster-face-thumb {
+  position: absolute !important;
+  left: 8px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+.stats {
+  text-align: center;
+  font-family: inherit;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.item-list {
+  text-align: center;
+  justify-items: center;
+}
+
+.menu-page {
+  text-align: center;
 }

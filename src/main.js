@@ -10,26 +10,26 @@ const MONSTER_DATA = [
     {
         name: 'The Hollow',
         texture: '/textures/monster_face_1.png',
-        ability: '+10% Speed',
-        description: 'Moves 10% faster'
+        ability: '+10% Monster Speed',
+        description: 'Moves 10% faster than the player'
     },
     {
         name: 'Crimson Eye',
         texture: '/textures/monster_face_2.png',
         ability: '-12% Player Speed',
-        description: 'Reduces player movement speed'
+        description: 'Slows down the player by 12%'
     },
     {
         name: 'Skull Wraith',
         texture: '/textures/ghost_skull_1.png',
-        ability: '+15% Speed',
-        description: 'Moves 15% faster than normal'
+        ability: '+15% Monster Speed',
+        description: 'Moves 15% faster than the player'
     },
     {
         name: 'The Shade',
         texture: '/textures/ghost_skull_2.png',
-        ability: '-40% Light Intensity',
-        description: 'Dims flashlight and moonlight'
+        ability: '-60% Light Intensity',
+        description: 'Dims flashlight and moonlight by 60%'
     }
 ];
 
@@ -218,6 +218,31 @@ class Game {
 
     }
 
+    showGameHint() {
+        const hint = document.getElementById('game-hint');
+        if (!hint) return;
+        
+        hint.style.display = 'flex';
+        // Force reflow
+        hint.offsetHeight;
+        hint.classList.add('show');
+        
+        // Start fading after 4 seconds from appearance
+        setTimeout(() => {
+            if (hint && hint.classList.contains('show')) {
+                hint.classList.add('fade-out');
+            }
+        }, 4000);
+        
+        // Completely hide after 5 seconds from appearance
+        setTimeout(() => {
+            if (hint) {
+                hint.style.display = 'none';
+                hint.classList.remove('show', 'fade-out');
+            }
+        }, 5000);
+    }
+
     init() {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -252,8 +277,8 @@ class Game {
         // Preload essential textures with tracking
         this.initTextureLoading();
 
-        // Cool Flashlight (SpotLight attached to camera)
-        this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.5, 20, Math.PI / 6, 0.5, 2);
+        // Cool Flashlight (SpotLight attached to camera) - Intensity reduced from 2.5 to 2.0 (20%)
+        this.flashlight = new THREE.SpotLight(0xc0d0ff, 2.0, 20, Math.PI / 6, 0.5, 2);
         this.flashlight.position.set(0.3, -0.2, -0.2);
         this.flashlight.castShadow = true;
         
@@ -278,8 +303,8 @@ class Game {
         this.flashlight.visible = false; // Initially turned off
         this.camera.add(this.flashlight);
 
-        // Flashlight Halo (Secondary soft light for scattering effect)
-        this.flashlightHalo = new THREE.SpotLight(0xc0d0ff, 0.8, 10, Math.PI / 3, 0.8, 1);
+        // Flashlight Halo (Secondary soft light for scattering effect) - Intensity reduced from 0.8 to 0.64 (20%)
+        this.flashlightHalo = new THREE.SpotLight(0xc0d0ff, 0.64, 10, Math.PI / 3, 0.8, 1);
         this.flashlightHalo.position.set(0.3, -0.2, -0.2);
         this.flashlightHalo.visible = false; // Initially turned off
         this.camera.add(this.flashlightHalo);
@@ -453,8 +478,8 @@ class Game {
             this.monster = this.monsterMeshCache;
             this.monster.visible = false;
             
-            // Add a pulsing point light to the monster
-            this.monsterLight = new THREE.PointLight(0xff0000, 2, 3);
+            // Add a pulsing point light to the monster - Intensity reduced from 2 to 1.6 (20%)
+            this.monsterLight = new THREE.PointLight(0xff0000, 1.6, 3);
             this.monsterLight.castShadow = true;
             this.monsterLight.shadow.bias = -0.005;
             this.monsterLight.shadow.camera.near = 0.05; // Was default 0.5 — too large → causes blocky shadow projection close to walls
@@ -744,57 +769,21 @@ class Game {
                 this.monsterSound.context.resume();
             }
             
-            // Show appropriate hint after 1 second based on level
+            // Show consolidated hint at level 1 and level 5
             if (this.level === 1 && !this.fullscreenHintShown) {
                 setTimeout(() => {
-                    // Only show if game is still active and hint hasn't been shown yet
-                    if (!this.fullscreenHintShown && this.controls.isLocked && !this.isGameOver && this.level === 1) {
-                        const hint = document.getElementById('fullscreen-hint');
-                        hint.style.display = 'block';
-                        hint.classList.add('show');
+                    if (this.controls.isLocked && !this.isGameOver && this.level === 1) {
+                        this.showGameHint();
                         this.fullscreenHintShown = true;
-                        
-                        // Start fading after 3 seconds from appearance
-                        setTimeout(() => {
-                            if (hint && hint.style.display !== 'none') {
-                                hint.classList.add('fade-out');
-                            }
-                        }, 3000);
-                        
-                        // Completely hide after 5 seconds from appearance
-                        setTimeout(() => {
-                            if (hint && hint.style.display !== 'none') {
-                                hint.style.display = 'none';
-                                hint.classList.remove('show', 'fade-out');
-                            }
-                        }, 5000);
                     }
-                }, 1000); // Wait 1 second before showing hint
+                }, 1000);
             } else if (this.level === 5 && !this.flashlightHintShown) {
                 setTimeout(() => {
-                    // Only show if game is still active and hint hasn't been shown yet
-                    if (!this.flashlightHintShown && this.controls.isLocked && !this.isGameOver && this.level === 5) {
-                        const hint = document.getElementById('flashlight-hint');
-                        hint.style.display = 'block';
-                        hint.classList.add('show');
+                    if (this.controls.isLocked && !this.isGameOver && this.level === 5) {
+                        this.showGameHint();
                         this.flashlightHintShown = true;
-                        
-                        // Start fading after 3 seconds from appearance
-                        setTimeout(() => {
-                            if (hint && hint.style.display !== 'none') {
-                                hint.classList.add('fade-out');
-                            }
-                        }, 3000);
-                        
-                        // Completely hide after 5 seconds from appearance
-                        setTimeout(() => {
-                            if (hint && hint.style.display !== 'none') {
-                                hint.style.display = 'none';
-                                hint.classList.remove('show', 'fade-out');
-                            }
-                        }, 5000);
                     }
-                }, 10000); // Wait 10 seconds before showing hint
+                }, 2000);
             }
             
             // Resume timer by adjusting startTime for the paused duration
@@ -1387,21 +1376,21 @@ class Game {
         this.scene.fog = new THREE.Fog(fogColor, Math.max(fogNear, 0.5), Math.max(fogFar, 5));
         this.renderer.setClearColor(fogColor);
 
-        // 2. Уменьшаем ambient light с уровнем (темнее становится)
-        const ambientIntensity = Math.max(0.32 - (this.level * 0.05), 0.12) * this.lightIntensityMultiplier;
+        // 2. Уменьшаем ambient light с уровнем (темнее становится) - Сделано на 20% темнее + еще на 20% глобально (0.64)
+        const ambientIntensity = Math.max(0.32 - (this.level * 0.05), 0.12) * 0.64 * this.lightIntensityMultiplier;
         const ambientLight = new THREE.AmbientLight(0x404040, ambientIntensity);
         ambientLight.isAmbientLight = true;
         this.scene.add(ambientLight);
 
-        // 3. Hemisphere light тоже уменьшается с уровнем
-        const hemiIntensity = Math.max(0.24 - (this.level * 0.03), 0.08) * this.lightIntensityMultiplier;
+        // 3. Hemisphere light тоже уменьшается с уровнем - Сделано на 20% темнее + еще на 20% глобально (0.64)
+        const hemiIntensity = Math.max(0.24 - (this.level * 0.03), 0.08) * 0.64 * this.lightIntensityMultiplier;
         const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x2F4F2F, hemiIntensity);
         this.scene.add(hemiLight);
 
         const moonPos = this.getMoonPositionForLevel(this.level);
 
-        // 4. УЛУЧШЕННОЕ moon light с тенями и эффектом свечения
-        this.moonLight = new THREE.DirectionalLight(0xffffff, 0.64);
+        // 4. УЛУЧШЕННОЕ moon light с тенями и эффектом свечения - Интенсивность снижена с 0.70 до 0.56 (20%)
+        this.moonLight = new THREE.DirectionalLight(0xffffff, 0.56);
         this.moonLight.castShadow = true;
         this.moonLight.position.set(moonPos.x, moonPos.y, moonPos.z);
         this.moonLight.target.position.set(0, 0, 0);
@@ -1413,8 +1402,8 @@ class Game {
             this.scene.remove(this.moonGlow);
         }
         
-        // Создаем мягкий свет для эффекта свечения Луны
-        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.24 * this.lightIntensityMultiplier, 100);
+        // Создаем мягкий свет для эффекта свечения Луны - Reduced from 0.24 (20%)
+        this.moonGlow = new THREE.PointLight(0x87CEEB, 0.192 * this.lightIntensityMultiplier, 100);
         this.moonGlow.position.set(moonPos.x, moonPos.y, moonPos.z);
         this.moonGlow.decay = 0.5; // Медленное затухание для эффекта ореола
         this.scene.add(this.moonGlow);
@@ -1429,7 +1418,8 @@ class Game {
             this.scene.remove(this.moonAmbientGlow);
         }
         
-        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.04 * this.lightIntensityMultiplier);
+        // Reduced from 0.04 (20%)
+        this.moonAmbientGlow = new THREE.AmbientLight(0x4169E1, 0.032 * this.lightIntensityMultiplier);
         this.scene.add(this.moonAmbientGlow);
 
         // Обновляем настройки теней для Луны
@@ -1620,7 +1610,7 @@ class Game {
         orb.add(glow);
         
         // Добавляем точечный свет для эффекта свечения
-        const orbLight = new THREE.PointLight(0xff0000, 0.5, 3);
+        const orbLight = new THREE.PointLight(0xff0000, 0.4, 3); // Reduced from 0.5 (20%)
         orbLight.position.set(0, 0, 0);
         orb.add(orbLight);
         
@@ -2227,12 +2217,12 @@ class Game {
         }
 
         // Create beautiful green exit glow using universal function
-        const greenGlow = this.createGlowEffect(exitX, exitZ, 0x00ff00, 0x00ff00, 1, 3, true); // With particles for green glow
+        const greenGlow = this.createGlowEffect(exitX, exitZ, 0x00ff00, 0x00ff00, 0.8, 3, true); // Reduced from 1 (20%)
         this.goal = greenGlow.glow;
         this.goalLight = greenGlow.glowLight;
 
         // Create beautiful red start glow using universal function
-        const redGlow = this.createGlowEffect(0, 1, 0xff0000, 0xff0000, 0.8, 2.5, false); // No particles for red glow
+        const redGlow = this.createGlowEffect(0, 1, 0xff0000, 0xff0000, 0.64, 2.5, false); // Reduced from 0.8 (20%)
         this.startGlow = redGlow.glow;
         this.startGlowLight = redGlow.glowLight;
 
@@ -2998,23 +2988,9 @@ createObstacle(x, y, material, type) {
             }
 
             if (nearBeam) {
-                const hint = document.getElementById('crouch-hint');
-                if (hint) {
-                    hint.style.display = 'block';
-                    setTimeout(() => hint.classList.add('show'), 10);
-                    
-                    this.crouchHintShown = true;
-                    localStorage.setItem('crouchHintShown', 'true');
-
-                    // Auto-hide after 5 seconds
-                    setTimeout(() => {
-                        hint.classList.add('fade-out');
-                        setTimeout(() => {
-                            hint.style.display = 'none';
-                            hint.classList.remove('show', 'fade-out');
-                        }, 500);
-                    }, 5000);
-                }
+                this.showGameHint();
+                this.crouchHintShown = true;
+                localStorage.setItem('crouchHintShown', 'true');
             }
         }
 
@@ -3047,6 +3023,13 @@ createObstacle(x, y, material, type) {
                 const numberElement = countdownElement.querySelector('.countdown-number');
                 const textElement = countdownElement.querySelector('.countdown-text');
                 
+                // HUD elements for countdown
+                const namePanel = document.getElementById('monster-name-panel');
+                const nameDisplay = document.getElementById('monster-name-display');
+                const abilityDisplay = document.getElementById('monster-ability-display');
+                const faceThumb = document.getElementById('monster-face-thumb');
+                const dict = translations[this.currentLanguage] || translations.en;
+                
                 if (spawnConditionMet) {
                     this.spawnMonster();
                     // Show "RUN" message
@@ -3054,6 +3037,8 @@ createObstacle(x, y, material, type) {
                     numberElement.className = "countdown-number run";
                     textElement.textContent = "MONSTER IS HERE";
                     this.runMessageShown = true;
+                    
+                    if (faceThumb) faceThumb.style.display = 'block';
                     
                     // Make sure it's visible
                     countdownElement.style.display = 'block';
@@ -3067,6 +3052,17 @@ createObstacle(x, y, material, type) {
                     countdownElement.style.display = 'block';
                     const displayTime = Math.ceil(timeUntilSpawn);
                     numberElement.textContent = displayTime;
+                    
+                    // Update HUD panel with countdown
+                    if (namePanel) {
+                        namePanel.style.display = 'flex';
+                        if (nameDisplay) {
+                            nameDisplay.textContent = displayTime;
+                            nameDisplay.style.color = '#ff3333';
+                        }
+                        if (abilityDisplay) abilityDisplay.textContent = '';
+                        if (faceThumb) faceThumb.style.display = 'none';
+                    }
                     
                     // Add warning classes based on time remaining
                     numberElement.className = "countdown-number";
@@ -3349,8 +3345,8 @@ createObstacle(x, y, material, type) {
         } else if (monsterIndex === 2) { // Skull Wraith: +15% Speed
             this.monsterSpeedMultiplier = 1.15;
             this.monsterSpeed *= this.monsterSpeedMultiplier;
-        } else if (monsterIndex === 3) { // The Shade: -40% Light Intensity
-            this.lightIntensityMultiplier = 0.6;
+        } else if (monsterIndex === 3) { // The Shade: -60% Light Intensity
+            this.lightIntensityMultiplier = 0.4;
             this.updateLighting(); // Re-apply lighting with the new multiplier
         }
 
@@ -3371,12 +3367,16 @@ createObstacle(x, y, material, type) {
         const faceThumb = document.getElementById('monster-face-thumb');
 
         if (namePanel && nameDisplay) {
-            nameDisplay.textContent = data.name;
+            namePanel.style.display = 'flex';
+            if (faceThumb) faceThumb.style.display = 'block';
+            
+            const dict = translations[this.currentLanguage] || translations.en;
+            nameDisplay.textContent = dict[`monster_${monsterIndex}_name`] || data.name;
             nameDisplay.style.color = glowCssColors[glowIndex];
             nameDisplay.style.textShadow = `0 0 10px ${glowCssColors[glowIndex]}`;
             
             if (abilityDisplay) {
-                abilityDisplay.textContent = data.ability;
+                abilityDisplay.textContent = dict[`monster_${monsterIndex}_ability`] || data.ability;
                 abilityDisplay.style.color = glowCssColors[glowIndex];
             }
             
@@ -3441,9 +3441,17 @@ createObstacle(x, y, material, type) {
         // Reset lighting if it was dimmed
         this.updateLighting();
         
-        // Hide name panel
-        const namePanel = document.getElementById('monster-name-panel');
-        if (namePanel) namePanel.style.display = 'none';
+        // Reset name panel to initial state instead of hiding
+        const nameDisplay = document.getElementById('monster-name-display');
+        const abilityDisplay = document.getElementById('monster-ability-display');
+        const faceThumb = document.getElementById('monster-face-thumb');
+        
+        if (nameDisplay) {
+            const dict = translations[this.currentLanguage] || translations.en;
+            nameDisplay.textContent = dict.monster_initial;
+        }
+        if (abilityDisplay) abilityDisplay.textContent = '';
+        if (faceThumb) faceThumb.style.display = 'none';
     }
 
     buildMonsterMeshCache() {
@@ -3566,7 +3574,7 @@ createObstacle(x, y, material, type) {
         
         // Light
         // Reduced distance from 8 to 3 — prevents light bleeding through walls
-        const light = new THREE.PointLight(0xffaa00, 2.4, 3);
+        const light = new THREE.PointLight(0xffaa00, 1.92, 3); // Reduced from 2.4 (20%)
         light.position.copy(flameGroup.position);
         // Disable shadows on torches to drastically improve performance 
         // (Multiple PointLight shadows cause severe lag)
@@ -3581,7 +3589,7 @@ createObstacle(x, y, material, type) {
             group: torchGroup,
             light,
             flameMeshes,
-            baseIntensity: 2.4,
+            baseIntensity: 1.92, // Reduced from 2.4 (20%)
             gridX: x,
             gridZ: z
         };
@@ -4005,9 +4013,17 @@ createObstacle(x, y, material, type) {
         document.getElementById('timer').textContent = "00:00";
         document.getElementById('bonus-indicator').style.display = 'none';
 
-        // Hide monster name badge on restart
-        const namePanel = document.getElementById('monster-name-panel');
-        if (namePanel) namePanel.style.display = 'none';
+        // Reset monster name badge on restart
+        const nameDisplay = document.getElementById('monster-name-display');
+        const abilityDisplay = document.getElementById('monster-ability-display');
+        const faceThumb = document.getElementById('monster-face-thumb');
+        
+        if (nameDisplay) {
+            const dict = translations[this.currentLanguage] || translations.en;
+            nameDisplay.textContent = dict.monster_initial;
+        }
+        if (abilityDisplay) abilityDisplay.textContent = '';
+        if (faceThumb) faceThumb.style.display = 'none';
         
         // Hide the monster mesh but DON'T stop its sound — keeps playing on death screen
         if (this.monsterSpawned) {
@@ -4144,8 +4160,16 @@ createObstacle(x, y, material, type) {
             }
 
             // Hide monster name badge for the new level
-            const namePanel = document.getElementById('monster-name-panel');
-            if (namePanel) namePanel.style.display = 'none';
+            const nameDisplay = document.getElementById('monster-name-display');
+            const abilityDisplay = document.getElementById('monster-ability-display');
+            const faceThumb = document.getElementById('monster-face-thumb');
+            
+            if (nameDisplay) {
+                const dict = translations[this.currentLanguage] || translations.en;
+                nameDisplay.textContent = dict.monster_initial;
+            }
+            if (abilityDisplay) abilityDisplay.textContent = '';
+            if (faceThumb) faceThumb.style.display = 'none';
             
             // Reset spawn conditions for new level
             this.playerLeftStartArea = false;

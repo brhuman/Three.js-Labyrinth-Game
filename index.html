@@ -203,16 +203,16 @@
             <h3 style="color: #ff3333; margin-bottom: 10px; font-family: 'Courier New', Courier, monospace; letter-spacing: 1px;">BESTIARY</h3>
             <div style="font-size: 0.85rem; line-height: 1.5; color: #eee;">
               <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
-                <strong style="color: #ff3333;">The Hollow</strong>: A swift phantom that moves <span style="color: #ff4444; font-weight: bold;">10% faster</span> than normal.
+                <strong style="color: #ff3333;" data-i18n="monster_0_name">The Hollow</strong>: <span data-i18n="monster_0_desc">A swift phantom that moves <span style="color: #ff4444; font-weight: bold;">10% faster</span> than the player.</span>
               </div>
               <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
-                <strong style="color: #ff3333;">Crimson Eye</strong>: Its gaze weakens your resolve, reducing player speed by <span style="color: #ff4444; font-weight: bold;">12%</span>.
+                <strong style="color: #ff3333;" data-i18n="monster_1_name">Crimson Eye</strong>: <span data-i18n="monster_1_desc">Its gaze weakens your resolve, slowing down the player by <span style="color: #ff4444; font-weight: bold;">12%</span>.</span>
               </div>
               <div style="margin-bottom: 10px; border-bottom: 1px solid rgba(255,51,51,0.2); padding-bottom: 5px;">
-                <strong style="color: #ff3333;">Skull Wraith</strong>: A swift phantom. Moves <span style="color: #ff4444; font-weight: bold;">15% faster</span> than normal.
+                <strong style="color: #ff3333;" data-i18n="monster_2_name">Skull Wraith</strong>: <span data-i18n="monster_2_desc">A swift phantom. Moves <span style="color: #ff4444; font-weight: bold;">15% faster</span> than the player.</span>
               </div>
               <div style="margin-bottom: 5px;">
-                <strong style="color: #ff3333;">The Shade</strong>: Consumes light, making flashlight and moonlight <span style="color: #ff4444; font-weight: bold;">40% dimmer</span>.
+                <strong style="color: #ff3333;" data-i18n="monster_3_name">The Shade</strong>: <span data-i18n="monster_3_desc">Consumes light, making flashlight and moonlight <span style="color: #ff4444; font-weight: bold;">60% dimmer</span>.</span>
               </div>
             </div>
           </div>
@@ -300,13 +300,20 @@
         </div>
 
         <div class="glass-panel-group">
-          <div class="glass-panel">
+          <!-- Level Panel -->
+          <div class="glass-panel hud-stat-panel">
             <div class="stats"><span data-i18n="level">Level</span>: <span id="level">1</span></div>
           </div>
+          
+          <!-- Time Panel -->
+          <div class="glass-panel hud-stat-panel">
+            <div class="stats"><span data-i18n="time">Time</span>: <span id="timer">00:00</span></div>
+          </div>
 
-          <div id="monster-name-panel" class="glass-panel" style="display: none; gap: 8px; align-items: center; flex-direction: row; padding: 6px 10px; position: relative;">
+          <!-- Monster Panel -->
+          <div id="monster-name-panel" class="glass-panel hud-stat-panel" style="padding: 0 48px !important;">
             <img id="monster-face-thumb" src="" alt="" style="
-              width: 34px; height: 34px;
+              width: 32px; height: 32px;
               border-radius: 50%;
               object-fit: cover;
               object-position: center;
@@ -315,16 +322,14 @@
               flex-shrink: 0;
               image-rendering: auto;
               background: rgba(0,0,0,0.4);
+              display: none;
             "/>
-            <div style="display: flex; flex-direction: column;">
-              <div class="stats" id="monster-name-display" style="color: #ff4444; text-shadow: 0 0 8px currentColor; letter-spacing: 1px; white-space: nowrap; font-size: 0.9rem;"></div>
-              <div id="monster-ability-display" style="font-size: 0.65rem; font-style: italic; opacity: 0.8; margin-top: -2px; letter-spacing: 0.5px;"></div>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; flex-grow: 1; width: 100%;">
+              <div class="stats" id="monster-name-display" data-i18n="monster_initial" style="color: #ff4444; text-shadow: 0 0 8px currentColor; letter-spacing: 1px; white-space: nowrap; font-size: 0.82rem; text-align: center; width: 100%;"></div>
+              <div id="monster-ability-display" style="font-size: 0.6rem; font-style: italic; opacity: 0.8; margin-top: -2px; letter-spacing: 0.3px; text-align: center; width: 100%;"></div>
             </div>
           </div>
 
-          <div class="glass-panel">
-            <div class="stats"><span data-i18n="time">Time</span>: <span id="timer">00:00</span></div>
-          </div>
           <div id="bonus-speed-indicator" class="glass-panel" style="display: none; border-color: #00ffff;">
             <div class="stats" style="color: #00ffff;">Speed Boost: <span id="bonus-speed-time">15s</span></div>
           </div>
@@ -346,25 +351,23 @@
       <div class="countdown-text" data-i18n="monster_spawning">MONSTER SPAWNING</div>
     </div>
     
-    <!-- Flashlight Hint -->
-    <div id="flashlight-hint" class="flashlight-hint" style="display: none;">
-      <div class="flashlight-icon">🔦</div>
-      <div class="flashlight-text">Press <kbd>F</kbd> to enable flashlight</div>
-      <div class="flashlight-subtitle">Light your way through the darkness</div>
-    </div>
-    
-    <!-- Fullscreen Hint -->
-    <div id="fullscreen-hint" class="flashlight-hint" style="display: none;">
-      <div class="flashlight-icon">⛶</div>
-      <div class="flashlight-text">Press <kbd>L</kbd> to toggle fullscreen mode</div>
-      <div class="flashlight-subtitle">Immerse yourself in the maze</div>
-    </div>
-    
-    <!-- Crouch Hint -->
-    <div id="crouch-hint" class="flashlight-hint" style="display: none;">
-      <div class="flashlight-icon">↓</div>
-      <div class="flashlight-text">Press <kbd>C</kbd> or <kbd>Ctrl</kbd> to crouch</div>
-      <div class="flashlight-subtitle">Pass under low beams to survive</div>
+    <!-- Consolidated Game Hint -->
+    <div id="game-hint" class="game-hint" style="display: none;">
+      <div class="hint-title" data-i18n="controls_title">CONTROLS</div>
+      <div class="hint-items">
+        <div class="hint-item">
+          <span class="hint-icon">⛶</span>
+          <span class="hint-text" data-i18n="hint_fullscreen">L — Fullscreen</span>
+        </div>
+        <div class="hint-item">
+          <span class="hint-icon">🔦</span>
+          <span class="hint-text" data-i18n="hint_flashlight">F — Flashlight</span>
+        </div>
+        <div class="hint-item">
+          <span class="hint-icon">↓</span>
+          <span class="hint-text" data-i18n="hint_crouch">C/Ctrl — Crouch</span>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/src/main.js"></script>
