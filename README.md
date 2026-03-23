@@ -1,6 +1,6 @@
 # ☠️ DEADLY LABYRINTH
 
-**[Live Demo: deadly-labyrinth.vercel.app](https://deadly-labyrinth.vercel.app/)**
+**[Live Demo: tthree-js-labyrinth-game.vercel.app](https://tthree-js-labyrinth-game.vercel.app/)**
 
 A dark, atmospheric first-person 3D maze game built in the browser with **Three.js** and **Vite**. Explore a procedurally generated stone labyrinth, collect keys, grab power-ups, and escape before the monster hunts you down.
 
